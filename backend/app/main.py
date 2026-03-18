@@ -1,8 +1,13 @@
 import os
 from contextlib import asynccontextmanager
 
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+from app.routers import auth
+
+load_dotenv()
 
 
 @asynccontextmanager
@@ -13,6 +18,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="job-tracker-v2", lifespan=lifespan)
+app.include_router(auth.router)
 
 origins = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()]
 extension_origin = os.getenv("EXTENSION_ORIGIN", "")
