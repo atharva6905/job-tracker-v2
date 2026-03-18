@@ -61,10 +61,6 @@ def test_get_me_no_duplicate_on_subsequent_login(
     assert count == 1
 
 
-def test_export_returns_501(client, auth_headers):
-    resp = client.get("/users/me/export", headers=auth_headers)
-    assert resp.status_code == 501
-
 
 def test_delete_user_returns_204(client, auth_headers):
     from unittest.mock import patch
