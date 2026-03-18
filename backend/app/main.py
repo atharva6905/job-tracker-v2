@@ -13,7 +13,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.dependencies.rate_limit import get_ip_key, limiter, rate_limit_exceeded_handler
-from app.routers import applications, auth, companies, extension, interviews
+from app.routers import applications, auth, companies, extension, gmail, interviews
 from app.utils.logging import get_logger
 
 load_dotenv()
@@ -95,6 +95,7 @@ app.include_router(companies.router)
 app.include_router(applications.router)
 app.include_router(interviews.router)
 app.include_router(extension.router)
+app.include_router(gmail.router)
 
 
 # --- Health check ---

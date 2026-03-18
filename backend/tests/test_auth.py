@@ -66,6 +66,9 @@ def test_export_returns_501(client, auth_headers):
     assert resp.status_code == 501
 
 
-def test_delete_user_returns_501(client, auth_headers):
-    resp = client.delete("/users/me", headers=auth_headers)
-    assert resp.status_code == 501
+def test_delete_user_returns_204(client, auth_headers):
+    from unittest.mock import patch
+
+    with patch("app.routers.auth.scheduler"):
+        resp = client.delete("/users/me", headers=auth_headers)
+    assert resp.status_code == 204

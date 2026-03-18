@@ -21,6 +21,7 @@ from app.database import Base  # noqa: E402
 
 # Import all models so they register with Base.metadata
 from app.models import user, company, application, interview, job_description  # noqa: E402, F401
+from app.models import gmail_oauth_state, email_account  # noqa: E402, F401
 
 target_metadata = Base.metadata
 
