@@ -2,6 +2,7 @@ import os
 from typing import List
 
 import requests as http_requests
+from apscheduler.jobstores.base import JobLookupError
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from googleapiclient.discovery import build as google_build
@@ -11,7 +12,9 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies.auth import User, get_current_user
 from app.dependencies.rate_limit import get_ip_key, limiter
+from app.jobs.poll_job import poll_gmail_account
 from app.models.email_account import EmailAccount
+from app.scheduler import scheduler
 from app.schemas.gmail import EmailAccountResponse
 from app.services.gmail_oauth_service import (
     build_oauth_flow,
@@ -68,7 +71,16 @@ def gmail_callback(
     profile = gmail.users().getProfile(userId="me").execute()
     email = profile["emailAddress"]
 
-    store_gmail_tokens(db, user_id, credentials, email)
+    account = store_gmail_tokens(db, user_id, credentials, email)
+    scheduler.add_job(
+        poll_gmail_account,
+        trigger="interval",
+        minutes=15,
+        id=f"poll_{account.id}",
+        args=[str(account.id)],
+        max_instances=1,
+        replace_existing=True,
+    )
 
     _logger.info("Gmail account connected", extra={"user_id": str(user_id)})
 
@@ -109,6 +121,11 @@ def gmail_disconnect(
             "Token revocation failed",
             extra={"error_type": type(exc).__name__, "user_id": str(current_user.id)},
         )
+
+    try:
+        scheduler.remove_job(f"poll_{account.id}")
+    except JobLookupError:
+        pass
 
     db.delete(account)
     db.commit()

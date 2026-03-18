@@ -10,10 +10,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
+from sqlalchemy import select
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from app.database import SessionLocal
 from app.dependencies.rate_limit import get_ip_key, limiter, rate_limit_exceeded_handler
+from app.jobs.cleanup_job import cleanup_expired_oauth_states
+from app.jobs.keepalive_job import ping_health
+from app.jobs.poll_job import poll_gmail_account
+from app.models.email_account import EmailAccount
 from app.routers import applications, auth, companies, extension, gmail, interviews
+from app.scheduler import scheduler
 from app.utils.logging import get_logger
 
 load_dotenv()
@@ -41,9 +48,46 @@ class ContentSizeLimitMiddleware(BaseHTTPMiddleware):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # scheduler.start() added in chunk 9
+    # --- Startup ---
+    scheduler.start()
+
+    db = SessionLocal()
+    try:
+        accounts = db.scalars(select(EmailAccount)).all()
+        for account in accounts:
+            scheduler.add_job(
+                poll_gmail_account,
+                trigger="interval",
+                minutes=15,
+                id=f"poll_{account.id}",
+                args=[str(account.id)],
+                max_instances=1,
+                replace_existing=True,
+            )
+    finally:
+        db.close()
+
+    scheduler.add_job(
+        cleanup_expired_oauth_states,
+        trigger="interval",
+        hours=1,
+        id="cleanup_oauth_states",
+        max_instances=1,
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        ping_health,
+        trigger="interval",
+        days=3,
+        id="keepalive",
+        max_instances=1,
+        replace_existing=True,
+    )
+
     yield
-    # scheduler.shutdown(wait=False) added in chunk 9
+
+    # --- Shutdown ---
+    scheduler.shutdown(wait=False)
 
 
 debug = os.getenv("DEBUG", "false").lower() == "true"
