@@ -2,12 +2,13 @@ from datetime import date
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies.auth import get_current_user
+from app.dependencies.rate_limit import limiter
 from app.models.application import Application, ApplicationStatus
 from app.models.user import User
 from app.schemas.applications import ApplicationCreate, ApplicationResponse, ApplicationUpdate
@@ -17,7 +18,9 @@ router = APIRouter(prefix="/applications", tags=["applications"])
 
 
 @router.get("", response_model=list[ApplicationResponse])
+@limiter.limit("60/minute")
 def list_applications(
+    request: Request,
     status: Optional[ApplicationStatus] = Query(None),
     company_id: Optional[UUID] = Query(None),
     date_applied_start: Optional[date] = Query(None),
@@ -41,7 +44,9 @@ def list_applications(
 
 
 @router.post("", response_model=ApplicationResponse, status_code=201)
+@limiter.limit("60/minute")
 def create_application(
+    request: Request,
     body: ApplicationCreate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -60,7 +65,9 @@ def create_application(
 
 
 @router.get("/{application_id}", response_model=ApplicationResponse)
+@limiter.limit("60/minute")
 def get_application(
+    request: Request,
     application_id: UUID,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -77,7 +84,9 @@ def get_application(
 
 
 @router.patch("/{application_id}", response_model=ApplicationResponse)
+@limiter.limit("60/minute")
 def update_application(
+    request: Request,
     application_id: UUID,
     body: ApplicationUpdate,
     current_user: User = Depends(get_current_user),
@@ -104,7 +113,9 @@ def update_application(
 
 
 @router.delete("/{application_id}", status_code=204)
+@limiter.limit("60/minute")
 def delete_application(
+    request: Request,
     application_id: UUID,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),

@@ -1,12 +1,13 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies.auth import get_current_user
+from app.dependencies.rate_limit import limiter
 from app.models.company import Company
 from app.models.user import User
 from app.schemas.companies import CompanyCreate, CompanyResponse, CompanyUpdate
@@ -16,7 +17,9 @@ router = APIRouter(prefix="/companies", tags=["companies"])
 
 
 @router.get("", response_model=list[CompanyResponse])
+@limiter.limit("60/minute")
 def list_companies(
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -26,7 +29,9 @@ def list_companies(
 
 
 @router.post("", response_model=CompanyResponse, status_code=201)
+@limiter.limit("60/minute")
 def create_company(
+    request: Request,
     body: CompanyCreate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -58,7 +63,9 @@ def create_company(
 
 
 @router.get("/{company_id}", response_model=CompanyResponse)
+@limiter.limit("60/minute")
 def get_company(
+    request: Request,
     company_id: UUID,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -75,7 +82,9 @@ def get_company(
 
 
 @router.patch("/{company_id}", response_model=CompanyResponse)
+@limiter.limit("60/minute")
 def update_company(
+    request: Request,
     company_id: UUID,
     body: CompanyUpdate,
     current_user: User = Depends(get_current_user),
@@ -104,7 +113,9 @@ def update_company(
 
 
 @router.delete("/{company_id}", status_code=204)
+@limiter.limit("60/minute")
 def delete_company(
+    request: Request,
     company_id: UUID,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),

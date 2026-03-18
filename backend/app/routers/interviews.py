@@ -1,11 +1,12 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies.auth import get_current_user
+from app.dependencies.rate_limit import limiter
 from app.models.application import Application
 from app.models.interview import Interview
 from app.models.user import User
@@ -15,7 +16,9 @@ router = APIRouter(tags=["interviews"])
 
 
 @router.get("/applications/{application_id}/interviews", response_model=list[InterviewResponse])
+@limiter.limit("60/minute")
 def list_interviews(
+    request: Request,
     application_id: UUID,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -38,7 +41,9 @@ def list_interviews(
     response_model=InterviewResponse,
     status_code=201,
 )
+@limiter.limit("60/minute")
 def create_interview(
+    request: Request,
     application_id: UUID,
     body: InterviewCreate,
     current_user: User = Depends(get_current_user),
