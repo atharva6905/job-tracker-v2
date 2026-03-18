@@ -36,3 +36,12 @@ class ApplicationResponse(BaseModel):
     date_applied: date | None
     notes: str | None
     created_at: datetime
+
+
+class JobDescriptionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    application_id: UUID
+    raw_text: str
+    captured_at: datetime

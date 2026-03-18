@@ -10,8 +10,14 @@ from app.database import get_db
 from app.dependencies.auth import get_current_user
 from app.dependencies.rate_limit import limiter
 from app.models.application import Application, ApplicationStatus
+from app.models.job_description import JobDescription
 from app.models.user import User
-from app.schemas.applications import ApplicationCreate, ApplicationResponse, ApplicationUpdate
+from app.schemas.applications import (
+    ApplicationCreate,
+    ApplicationResponse,
+    ApplicationUpdate,
+    JobDescriptionResponse,
+)
 from app.services.application_service import apply_status_transition
 
 router = APIRouter(prefix="/applications", tags=["applications"])
@@ -110,6 +116,32 @@ def update_application(
     db.commit()
     db.refresh(application)
     return application
+
+
+@router.get("/{application_id}/job-description", response_model=JobDescriptionResponse | None)
+@limiter.limit("60/minute")
+def get_job_description(
+    request: Request,
+    application_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    application = db.scalar(
+        select(Application).where(
+            Application.id == application_id,
+            Application.user_id == current_user.id,
+        )
+    )
+    if not application:
+        raise HTTPException(status_code=404)
+    jd = db.scalar(
+        select(JobDescription).where(
+            JobDescription.application_id == application_id
+        )
+    )
+    if not jd:
+        return None
+    return jd
 
 
 @router.delete("/{application_id}", status_code=204)
