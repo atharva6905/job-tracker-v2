@@ -76,6 +76,25 @@ def auth_headers(test_user: User, make_auth_token) -> dict:
 
 
 @pytest.fixture
+def other_user(db: Session) -> User:
+    """A second real User row for ownership/isolation tests."""
+    user = User(
+        id=uuid.uuid4(),
+        email=f"other_{uuid.uuid4().hex[:8]}@example.com",
+    )
+    db.add(user)
+    db.flush()
+    return user
+
+
+@pytest.fixture
+def other_auth_headers(other_user: User, make_auth_token) -> dict:
+    """Bearer headers for other_user."""
+    token = make_auth_token(str(other_user.id), other_user.email)
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
 def client(db: Session):
     """
     TestClient with get_db overridden to use the test transaction session.
