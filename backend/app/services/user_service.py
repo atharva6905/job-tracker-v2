@@ -1,32 +1,20 @@
+import uuid as uuid_module
+
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.dependencies.auth import User
+from app.models.user import User
 
 
 def get_or_create_user(db: Session, *, id: str, email: str) -> User:
-    """Find a user by id or create one. This is the only place users are created."""
-    # Chunk 3 replaces this with real ORM queries against the users table.
-    # For now, return a stub so auth wiring can be tested end-to-end once the
-    # DB exists.
-    from sqlalchemy import text
+    """Find a user by Supabase Auth UUID or create one. Only place users are created."""
+    user_id = uuid_module.UUID(id)
+    user = db.scalar(select(User).where(User.id == user_id))
+    if user:
+        return user
 
-    row = db.execute(
-        text("SELECT id, email, created_at FROM users WHERE id = :id"),
-        {"id": id},
-    ).fetchone()
-
-    if row:
-        return User(id=str(row.id), email=row.email, created_at=row.created_at)
-
-    db.execute(
-        text("INSERT INTO users (id, email) VALUES (:id, :email)"),
-        {"id": id, "email": email},
-    )
+    user = User(id=user_id, email=email)
+    db.add(user)
     db.commit()
-
-    row = db.execute(
-        text("SELECT id, email, created_at FROM users WHERE id = :id"),
-        {"id": id},
-    ).fetchone()
-
-    return User(id=str(row.id), email=row.email, created_at=row.created_at)
+    db.refresh(user)
+    return user

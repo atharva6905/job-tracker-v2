@@ -1,31 +1,21 @@
 import os
-from dataclasses import dataclass, field
-from datetime import datetime
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt
-from sqlalchemy.orm import Session
+from fastapi import Depends, HTTPException, status  # noqa: E402
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer  # noqa: E402
+from jose import JWTError, jwt  # noqa: E402
+from sqlalchemy.orm import Session  # noqa: E402
 
-from app.database import get_db
+from app.database import get_db  # noqa: E402
+from app.models.user import User  # noqa: E402, F401 — re-exported for router imports
 
 SUPABASE_JWT_SECRET = os.environ["SUPABASE_JWT_SECRET"]
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 
 _bearer = HTTPBearer()
-
-
-# Stub — replaced by the real SQLAlchemy model in chunk 3.
-# Update the import in get_current_user at that point.
-@dataclass
-class User:
-    id: str
-    email: str
-    created_at: datetime = field(default_factory=datetime.utcnow)
 
 
 def verify_supabase_jwt(token: str) -> dict:

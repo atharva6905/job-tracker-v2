@@ -19,8 +19,8 @@ if config.config_file_name is not None:
 # Import Base from database so Alembic can detect models
 from app.database import Base  # noqa: E402
 
-# Import all models here so they register with Base.metadata
-# e.g.: from app.models import user, application  (added as chunks are built)
+# Import all models so they register with Base.metadata
+from app.models import user, company, application, interview, job_description  # noqa: E402, F401
 
 target_metadata = Base.metadata
 
