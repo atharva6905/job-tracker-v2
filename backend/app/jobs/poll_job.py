@@ -10,6 +10,7 @@ from sqlalchemy import select
 from app.database import SessionLocal
 from app.models.email_account import EmailAccount
 from app.models.raw_email import RawEmail
+from app.services.gemini_service import classify_email
 from app.utils.email_filter import is_job_related
 from app.utils.encryption import decrypt_token, encrypt_token
 from app.utils.gmail_client import GmailClientInterface, RealGmailClient
@@ -139,7 +140,9 @@ def poll_gmail_account(
                     )
                     continue
 
-                # Store — gemini_signal=None until chunk 11 adds classification
+                # Classify with Gemini before storing
+                classification = classify_email(subject, sender, body_snippet)
+
                 raw_email = RawEmail(
                     email_account_id=account.id,
                     gmail_message_id=message_id,
@@ -147,20 +150,27 @@ def poll_gmail_account(
                     sender=sender,
                     received_at=received_at,
                     body_snippet=body_snippet,
-                    gemini_signal=None,
-                    gemini_confidence=None,
+                    gemini_signal=classification.signal,
+                    gemini_confidence=classification.confidence,
                 )
                 db.add(raw_email)
                 db.commit()
 
                 _logger.info(
-                    "Email stored",
+                    "Email classified and stored",
                     extra={
                         "gmail_message_id": message_id,
                         "email_account_id": account_id,
+                        "gemini_signal": classification.signal,
+                        "gemini_confidence": classification.confidence,
                         "action_taken": "stored",
                     },
                 )
+
+                # TODO (chunk 12): trigger application status update for actionable signals
+                # actionable = {"APPLIED", "INTERVIEW", "OFFER", "REJECTED"}
+                # if classification.signal in actionable and classification.confidence >= 0.75:
+                #     email_application_service.process_email(db, raw_email, account.user_id)
 
             page_token = result.get("nextPageToken")
             if not page_token:

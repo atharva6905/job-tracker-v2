@@ -19,5 +19,5 @@ google-auth
 google-auth-oauthlib
 google-api-python-client
 slowapi
-google-generativeai
+google-genai
 psycopg2-binary
