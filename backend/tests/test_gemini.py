@@ -14,14 +14,11 @@ from app.services.gemini_service import GeminiClassificationResult, classify_ema
 
 def _make_429() -> genai_errors.ClientError:
     """Build a ClientError that represents a 429 rate-limit response."""
-    err = genai_errors.ClientError.__new__(genai_errors.ClientError)
-    err.code = 429
-    err.status = "RESOURCE_EXHAUSTED"
-    err.message = "rate limited"
-    err.details = {}
-    err.response = None
-    Exception.__init__(err, "429 RESOURCE_EXHAUSTED. rate limited")
-    return err
+    return genai_errors.ClientError(
+        429,
+        {"error": {"message": "rate limited", "status": "RESOURCE_EXHAUSTED"}},
+        None,
+    )
 
 
 def _mock_response(json_text: str) -> MagicMock:
@@ -121,20 +118,23 @@ class TestClassifyEmail:
         # First retry delay: 2s + 0.5 jitter
         mock_sleep.assert_called_once_with(2.5)
 
-    def test_three_429s_exhausted_returns_parse_error(self):
-        """Three consecutive 429 responses exhaust retries and return PARSE_ERROR."""
+    def test_four_429s_exhausted_returns_parse_error(self):
+        """Four consecutive 429 responses (1 initial + 3 retries) exhaust all attempts."""
         client = _build_client_mock(
-            side_effect=[_make_429(), _make_429(), _make_429()]
+            side_effect=[_make_429(), _make_429(), _make_429(), _make_429()]
         )
 
         with patch("app.services.gemini_service.genai.Client", return_value=client), \
-             patch("app.services.gemini_service.time.sleep"), \
+             patch("app.services.gemini_service.time.sleep") as mock_sleep, \
              patch("app.services.gemini_service.random.uniform", return_value=0.0):
             result = classify_email("subject", "sender@company.com", "snippet")
 
         assert result.signal == "PARSE_ERROR"
         assert result.confidence == 0.0
-        assert client.models.generate_content.call_count == 3
+        assert client.models.generate_content.call_count == 4
+        # All 3 retry delays used: 2s, 4s, 8s
+        sleep_calls = [call.args[0] for call in mock_sleep.call_args_list]
+        assert sleep_calls == [2.0, 4.0, 8.0]
 
     def test_irrelevant_signal_returned_as_is(self):
         """IRRELEVANT signal is returned unchanged — no status change triggered."""

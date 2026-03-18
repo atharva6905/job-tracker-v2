@@ -10,6 +10,7 @@ from sqlalchemy import select
 from app.database import SessionLocal
 from app.models.email_account import EmailAccount
 from app.models.raw_email import RawEmail
+from app.services.email_application_service import process_email_signal
 from app.services.gemini_service import classify_email
 from app.utils.email_filter import is_job_related
 from app.utils.encryption import decrypt_token, encrypt_token
@@ -167,10 +168,12 @@ def poll_gmail_account(
                     },
                 )
 
-                # TODO (chunk 12): trigger application status update for actionable signals
-                # actionable = {"APPLIED", "INTERVIEW", "OFFER", "REJECTED"}
-                # if classification.signal in actionable and classification.confidence >= 0.75:
-                #     email_application_service.process_email(db, raw_email, account.user_id)
+                # Trigger application status update for actionable signals
+                _actionable = {"APPLIED", "INTERVIEW", "OFFER", "REJECTED"}
+                if classification.signal in _actionable:
+                    process_email_signal(
+                        db, account.user_id, raw_email, classification
+                    )
 
             page_token = result.get("nextPageToken")
             if not page_token:

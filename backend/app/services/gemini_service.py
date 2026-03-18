@@ -76,7 +76,8 @@ def classify_email(
     - company / role: extracted metadata (may be None)
 
     Retries on HTTP 429 with exponential backoff: 2s → 4s → 8s (each with up
-    to 1s jitter). Returns PARSE_ERROR after exhausting all three attempts.
+    to 1s jitter).  1 initial attempt + up to 3 retries = 4 total attempts.
+    Returns PARSE_ERROR after exhausting all attempts.
     """
     client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
@@ -87,8 +88,9 @@ def classify_email(
     )
 
     _retry_delays = [2, 4, 8]
+    _max_attempts = len(_retry_delays) + 1  # 1 initial + 3 retries
 
-    for attempt in range(len(_retry_delays)):
+    for attempt in range(_max_attempts):
         try:
             response = client.models.generate_content(
                 model="gemini-2.5-flash",
@@ -133,15 +135,14 @@ def classify_email(
             )
             return result
 
-        except genai_errors.ClientError as exc:
-            if exc.code == 429:
-                if attempt < len(_retry_delays) - 1:
-                    delay = _retry_delays[attempt] + random.uniform(0, 1)
-                    time.sleep(delay)
-                # On the last attempt, fall through to PARSE_ERROR below
+        except genai_errors.APIError as exc:
+            if exc.code == 429 and attempt < len(_retry_delays):
+                delay = _retry_delays[attempt] + random.uniform(0, 1)
+                time.sleep(delay)
+                # loop continues to next attempt
             else:
                 _logger.warning(
-                    "Gemini API client error",
+                    "Gemini API error",
                     extra={
                         "gemini_signal": "PARSE_ERROR",
                         "gemini_confidence": 0.0,
@@ -158,6 +159,18 @@ def classify_email(
                     "gemini_signal": "PARSE_ERROR",
                     "gemini_confidence": 0.0,
                     "action_taken": "parse_error",
+                    "error_type": type(exc).__name__,
+                },
+            )
+            return _parse_error()
+
+        except Exception as exc:
+            _logger.warning(
+                "Gemini call failed unexpectedly",
+                extra={
+                    "gemini_signal": "PARSE_ERROR",
+                    "gemini_confidence": 0.0,
+                    "action_taken": "unexpected_error",
                     "error_type": type(exc).__name__,
                 },
             )

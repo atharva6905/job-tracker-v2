@@ -10,8 +10,16 @@ from sqlalchemy.orm import Session
 from app.models.email_account import EmailAccount
 from app.models.raw_email import RawEmail
 from app.models.user import User
+from app.services.gemini_service import GeminiClassificationResult
 from app.utils.encryption import encrypt_token
 from app.utils.gmail_client import GmailClientInterface, MockGmailClient
+
+_MOCK_CLASSIFICATION = GeminiClassificationResult(
+    company="Test Company",
+    role="Software Engineer",
+    signal="APPLIED",
+    confidence=0.95,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -63,12 +71,22 @@ def _noise_message(msg_id: str) -> dict:
 
 
 def _run_poll(db: Session, account_id: str, gmail_client: GmailClientInterface) -> None:
-    """Patch SessionLocal so poll_gmail_account uses the test transaction."""
+    """Patch SessionLocal so poll_gmail_account uses the test transaction.
+
+    Also mocks classify_email (returns a fixed APPLIED result) and
+    process_email_signal (no-op) so poll worker tests stay focused on
+    polling logic without hitting the real Gemini API or triggering
+    application side-effects.
+    """
     from app.jobs.poll_job import poll_gmail_account
 
     wrapped = MagicMock(wraps=db)
     wrapped.close = MagicMock()
-    with patch("app.jobs.poll_job.SessionLocal", return_value=wrapped):
+    with (
+        patch("app.jobs.poll_job.SessionLocal", return_value=wrapped),
+        patch("app.jobs.poll_job.classify_email", return_value=_MOCK_CLASSIFICATION),
+        patch("app.jobs.poll_job.process_email_signal"),
+    ):
         poll_gmail_account(account_id, gmail_client=gmail_client)
     wrapped.close.assert_called_once()
 
@@ -135,8 +153,8 @@ class TestPollGmailAccount:
         assert row.subject == "Application received — Software Engineer"
         assert "greenhouse.io" in row.sender
         assert row.received_at is not None
-        assert row.gemini_signal is None
-        assert row.gemini_confidence is None
+        assert row.gemini_signal == "APPLIED"
+        assert row.gemini_confidence == 0.95
 
     def test_body_snippet_truncated_to_500_chars(self, db, test_user):
         """body_snippet is never longer than 500 characters regardless of input length."""

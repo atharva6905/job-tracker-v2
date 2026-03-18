@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies.auth import User, get_current_user
+from app.dependencies.auth import User, get_current_user, get_or_create_current_user
 from app.dependencies.rate_limit import limiter
 from app.models.application import Application
 from app.models.company import Company
@@ -26,7 +26,7 @@ _logger = get_logger("auth")
 
 @router.get("/auth/me", response_model=UserResponse)
 @limiter.limit("60/minute")
-def get_me(request: Request, current_user: User = Depends(get_current_user)) -> User:
+def get_me(request: Request, current_user: User = Depends(get_or_create_current_user)) -> User:
     _logger.debug("Auth successful", extra={"user_id": str(current_user.id)})
     return current_user
 
