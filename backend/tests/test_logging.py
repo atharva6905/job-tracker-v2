@@ -5,8 +5,6 @@ import json
 import logging
 import uuid
 
-import pytest
-from pythonjsonlogger import jsonlogger
 
 from app.utils.logging import _JsonFormatter, get_logger
 

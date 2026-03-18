@@ -5,7 +5,6 @@ Row creation order follows FK dependencies:
   users → companies → applications → (interviews, job_descriptions)
   users → email_accounts → raw_emails (also linked to applications via SET NULL)
 """
-import uuid
 from unittest.mock import patch
 
 from sqlalchemy import select

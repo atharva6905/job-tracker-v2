@@ -3,7 +3,6 @@ import uuid
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
-import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -48,7 +47,7 @@ def _ats_message(msg_id: str, snippet: str = "We received your application.") ->
         "payload": {
             "headers": [
                 {"name": "Subject", "value": "Application received — Software Engineer"},
-                {"name": "From", "value": f"no-reply@greenhouse.io"},
+                {"name": "From", "value": "no-reply@greenhouse.io"},
                 {"name": "Date", "value": "Thu, 18 Mar 2026 10:00:00 +0000"},
             ]
         },

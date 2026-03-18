@@ -2,9 +2,9 @@ import os
 
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 load_dotenv()
-from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 # Use DATABASE_URL (port 6543, pooled) for runtime.
 # Alembic uses DATABASE_URL_DIRECT (port 5432).

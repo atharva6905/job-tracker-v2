@@ -2,7 +2,6 @@
 import logging
 from unittest.mock import MagicMock, patch
 
-import pytest
 from google.genai import errors as genai_errors
 
 from app.services.gemini_service import GeminiClassificationResult, classify_email
