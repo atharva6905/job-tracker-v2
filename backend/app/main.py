@@ -1,8 +1,11 @@
 import os
 from contextlib import asynccontextmanager
 
+import sentry_sdk
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exception_handlers import http_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
@@ -11,8 +14,15 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.dependencies.rate_limit import get_ip_key, limiter, rate_limit_exceeded_handler
 from app.routers import applications, auth, companies, extension, interviews
+from app.utils.logging import get_logger
 
 load_dotenv()
+
+_sentry_dsn = os.getenv("SENTRY_DSN")
+if _sentry_dsn:
+    sentry_sdk.init(dsn=_sentry_dsn, traces_sample_rate=0.1)
+
+_logger = get_logger("api")
 
 
 class ContentSizeLimitMiddleware(BaseHTTPMiddleware):
@@ -45,9 +55,37 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
 
+# --- HTTP exception handler — logs 4xx at WARNING ---
+@app.exception_handler(HTTPException)
+async def logged_http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    if exc.status_code >= 400:
+        _logger.warning(
+            "HTTP error",
+            extra={"endpoint": request.url.path, "status_code": exc.status_code},
+        )
+    return await http_exception_handler(request, exc)
+
+
+# --- Validation error handler — logs 422 at WARNING ---
+@app.exception_handler(RequestValidationError)
+async def logged_validation_exception_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    _logger.warning(
+        "Request validation error",
+        extra={"endpoint": request.url.path, "status_code": 422},
+    )
+    return JSONResponse({"detail": exc.errors()}, status_code=422)
+
+
 # --- Generic exception handler (must not leak stack traces) ---
 @app.exception_handler(Exception)
 async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    _logger.error(
+        "Unhandled exception",
+        extra={"endpoint": request.url.path, "error_type": type(exc).__name__},
+        exc_info=True,
+    )
     return JSONResponse({"detail": "Internal server error"}, status_code=500)
 
 
