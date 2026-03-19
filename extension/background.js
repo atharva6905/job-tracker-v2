@@ -2,9 +2,8 @@
 // SET_AUTH_TOKEN messages. Only the listed frontend origins are allowed. Without that
 // manifest entry, any website could inject a fake JWT into this extension.
 
-// TODO: Replace with production HTTPS URL before deploying.
 // Also update manifest.json host_permissions and externally_connectable matches.
-const API_BASE = "http://localhost:8000";
+const API_BASE = "https://job-tracker-v2-kappa.vercel.app/api";
 
 // Listen for messages from the frontend (restricted to externally_connectable origins)
 chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
