@@ -1,5 +1,4 @@
 """Integration tests for GET /applications/{id}/emails (chunk 17)."""
-import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
