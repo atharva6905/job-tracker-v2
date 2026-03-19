@@ -168,4 +168,5 @@ def gmail_poll(
     if not account:
         raise HTTPException(status_code=404)
 
-    return {"detail": "Not yet implemented"}
+    poll_gmail_account(str(account_id))
+    return {"detail": "Poll triggered"}
