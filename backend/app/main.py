@@ -105,7 +105,11 @@ async def logged_http_exception_handler(request: Request, exc: HTTPException) ->
     if exc.status_code >= 400:
         _logger.warning(
             "HTTP error",
-            extra={"endpoint": request.url.path, "status_code": exc.status_code},
+            extra={
+                "endpoint": request.url.path,
+                "status_code": exc.status_code,
+                "detail": exc.detail,
+            },
         )
     return await http_exception_handler(request, exc)
 

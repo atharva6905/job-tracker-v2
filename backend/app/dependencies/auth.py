@@ -1,13 +1,19 @@
+import logging
 import os
+import time
 import uuid as uuid_module
+from threading import Lock
+
+_logger = logging.getLogger(__name__)
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
+import httpx  # noqa: E402
 from fastapi import Depends, HTTPException, status  # noqa: E402
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer  # noqa: E402
-from jose import JWTError, jwt  # noqa: E402
+from jose import JWTError, jwk, jwt  # noqa: E402
 from sqlalchemy import select  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
@@ -19,18 +25,82 @@ SUPABASE_URL = os.environ["SUPABASE_URL"]
 
 _bearer = HTTPBearer()
 
+# JWKS cache — avoids a round-trip to Supabase on every request
+_jwks_keys: list[dict] = []
+_jwks_fetched_at: float = 0.0
+_jwks_lock = Lock()
+_JWKS_TTL = 3600.0  # seconds
+
+
+def _get_jwks_key(kid: str) -> dict:
+    """Return the JWKS public key matching kid, refreshing the cache if stale."""
+    global _jwks_keys, _jwks_fetched_at
+
+    now = time.monotonic()
+    with _jwks_lock:
+        if not _jwks_keys or (now - _jwks_fetched_at) > _JWKS_TTL:
+            resp = httpx.get(
+                f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json",
+                timeout=10.0,
+            )
+            resp.raise_for_status()
+            _jwks_keys = resp.json().get("keys", [])
+            _jwks_fetched_at = now
+
+    for key in _jwks_keys:
+        if key.get("kid") == kid:
+            return key
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="JWT signing key not found",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
 
 def verify_supabase_jwt(token: str) -> dict:
     try:
-        payload = jwt.decode(
-            token,
-            SUPABASE_JWT_SECRET,
-            algorithms=["HS256"],
-            audience="authenticated",
-            options={"verify_exp": True},
-        )
+        header = jwt.get_unverified_header(token)
+    except JWTError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token header",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+
+    alg = header.get("alg", "HS256")
+    kid = header.get("kid")
+    _logger.debug("JWT verify: alg=%s kid=%s", alg, kid)
+
+    try:
+        if alg == "HS256":
+            payload = jwt.decode(
+                token,
+                SUPABASE_JWT_SECRET,
+                algorithms=["HS256"],
+                audience="authenticated",
+                options={"verify_exp": True},
+            )
+        elif alg == "ES256":
+            key_data = _get_jwks_key(kid)
+            public_key = jwk.construct(key_data, algorithm="ES256")
+            pem = public_key.to_pem().decode()
+            payload = jwt.decode(
+                token,
+                pem,
+                algorithms=["ES256"],
+                audience="authenticated",
+                options={"verify_exp": True},
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"Unsupported JWT algorithm: {alg}",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
         return payload
     except JWTError as exc:
+        _logger.warning("JWT verification failed: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
