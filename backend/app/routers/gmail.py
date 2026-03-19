@@ -36,12 +36,17 @@ def gmail_connect(
     db: Session = Depends(get_db),
 ):
     """Initiate Gmail OAuth flow — returns an authorization URL."""
-    state_token = create_state_token(db, current_user.id)
     flow = build_oauth_flow()
     authorization_url, _ = flow.authorization_url(
         access_type="offline",
-        state=state_token,
         prompt="consent",
+    )
+    state_token = create_state_token(
+        db, current_user.id, code_verifier=flow.code_verifier
+    )
+    # Replace the library-generated state with our DB-backed CSRF token
+    authorization_url = authorization_url.replace(
+        f"state={flow.oauth2session._state}", f"state={state_token}"
     )
     return {"authorization_url": authorization_url}
 
@@ -60,10 +65,10 @@ def gmail_callback(
     NO auth dependency — there is no JWT on this request.
     User identity comes exclusively from the gmail_oauth_states DB row.
     """
-    user_id = consume_state_token(db, state)
+    user_id, code_verifier = consume_state_token(db, state)
 
     flow = build_oauth_flow()
-    flow.fetch_token(code=code)
+    flow.fetch_token(code=code, code_verifier=code_verifier)
     credentials = flow.credentials
 
     # Fetch the connected email address from Gmail API

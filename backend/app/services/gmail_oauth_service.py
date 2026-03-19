@@ -30,33 +30,32 @@ def build_oauth_flow() -> Flow:
     flow = Flow.from_client_config(
         client_config, scopes=GMAIL_SCOPES, redirect_uri=redirect_uri
     )
-    # Disable PKCE — the code verifier is not persisted between
-    # /gmail/connect and /gmail/callback (stateless HTTP), so PKCE
-    # cannot complete. Disable it entirely.
-    flow.code_verifier = None
-    flow.oauth2session._client.code_challenge_method = None
     return flow
 
 
-def create_state_token(db: Session, user_id: uuid.UUID) -> str:
+def create_state_token(
+    db: Session, user_id: uuid.UUID, code_verifier: str | None = None
+) -> str:
     """Generate a CSRF state token and persist it with a 10-minute expiry."""
     token = secrets.token_urlsafe(32)
     state = GmailOAuthState(
         state_token=token,
         user_id=user_id,
         expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+        code_verifier=code_verifier,
     )
     db.add(state)
     db.commit()
     return token
 
 
-def consume_state_token(db: Session, state_token: str) -> uuid.UUID:
+def consume_state_token(db: Session, state_token: str) -> tuple[uuid.UUID, str | None]:
     """
     Validate and consume a state token (single-use CSRF protection).
 
     Raises HTTP 400 if the token is unknown or expired.
     Deletes the row on success — leaving it open is a security regression.
+    Returns (user_id, code_verifier).
     """
     row = db.scalar(
         select(GmailOAuthState).where(GmailOAuthState.state_token == state_token)
@@ -70,9 +69,10 @@ def consume_state_token(db: Session, state_token: str) -> uuid.UUID:
         raise HTTPException(status_code=400, detail="State token expired")
 
     user_id = row.user_id
+    code_verifier = row.code_verifier
     db.delete(row)
     db.commit()
-    return user_id
+    return user_id, code_verifier
 
 
 def store_gmail_tokens(db: Session, user_id: uuid.UUID, credentials, email: str) -> EmailAccount:

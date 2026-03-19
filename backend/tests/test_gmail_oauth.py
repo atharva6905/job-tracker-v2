@@ -42,9 +42,11 @@ def _make_mock_credentials(
 def _make_mock_flow(credentials: MagicMock) -> MagicMock:
     flow = MagicMock()
     flow.credentials = credentials
+    flow.code_verifier = "test_code_verifier_value"
+    flow.oauth2session._state = "lib_generated_state"
     flow.authorization_url.return_value = (
-        "https://accounts.google.com/o/oauth2/auth?client_id=test",
-        "state_value",
+        "https://accounts.google.com/o/oauth2/auth?client_id=test&state=lib_generated_state",
+        "lib_generated_state",
     )
     return flow
 
