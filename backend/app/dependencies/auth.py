@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import time
@@ -11,9 +12,11 @@ load_dotenv()
 _logger = logging.getLogger(__name__)
 
 import httpx  # noqa: E402
+import jwt  # noqa: E402
 from fastapi import Depends, HTTPException, status  # noqa: E402
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer  # noqa: E402
-from jose import JWTError, jwk, jwt  # noqa: E402
+from jwt.algorithms import ECAlgorithm  # noqa: E402
+from jwt.exceptions import PyJWTError  # noqa: E402
 from sqlalchemy import select  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
@@ -61,7 +64,7 @@ def _get_jwks_key(kid: str) -> dict:
 def verify_supabase_jwt(token: str) -> dict:
     try:
         header = jwt.get_unverified_header(token)
-    except JWTError as exc:
+    except PyJWTError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token header",
@@ -79,18 +82,15 @@ def verify_supabase_jwt(token: str) -> dict:
                 SUPABASE_JWT_SECRET,
                 algorithms=["HS256"],
                 audience="authenticated",
-                options={"verify_exp": True},
             )
         elif alg == "ES256":
             key_data = _get_jwks_key(kid)
-            public_key = jwk.construct(key_data, algorithm="ES256")
-            pem = public_key.to_pem().decode()
+            public_key = ECAlgorithm.from_jwk(json.dumps(key_data))
             payload = jwt.decode(
                 token,
-                pem,
+                public_key,
                 algorithms=["ES256"],
                 audience="authenticated",
-                options={"verify_exp": True},
             )
         else:
             raise HTTPException(
@@ -99,7 +99,7 @@ def verify_supabase_jwt(token: str) -> dict:
                 headers={"WWW-Authenticate": "Bearer"},
             )
         return payload
-    except JWTError as exc:
+    except PyJWTError as exc:
         _logger.warning("JWT verification failed: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

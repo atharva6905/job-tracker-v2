@@ -1,7 +1,8 @@
 import os
 
+import jwt
 from fastapi import Request
-from jose import JWTError, jwt
+from jwt.exceptions import PyJWTError
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from starlette.responses import JSONResponse
@@ -28,10 +29,9 @@ def get_user_key(request: Request) -> str:
                 _SUPABASE_JWT_SECRET,
                 algorithms=["HS256"],
                 audience="authenticated",
-                options={"verify_exp": True},
             )
             return f"user:{payload['sub']}"
-    except (JWTError, Exception):
+    except (PyJWTError, Exception):
         pass
     return request.client.host
 

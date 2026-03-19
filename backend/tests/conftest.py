@@ -2,10 +2,10 @@ import os
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import jwt
 import pytest
 from dotenv import load_dotenv
 from fastapi.testclient import TestClient
-from jose import jwt as jose_jwt
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
@@ -63,7 +63,7 @@ def make_auth_token():
             "iat": datetime.now(timezone.utc),
             "exp": datetime.now(timezone.utc) + timedelta(hours=1),
         }
-        return jose_jwt.encode(payload, SUPABASE_JWT_SECRET, algorithm="HS256")
+        return jwt.encode(payload, SUPABASE_JWT_SECRET, algorithm="HS256")
 
     return _make
 
