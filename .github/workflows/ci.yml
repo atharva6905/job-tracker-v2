@@ -26,8 +26,8 @@ jobs:
           --health-retries 5
 
     env:
-      DATABASE_URL_DIRECT: postgresql://tracker:tracker@localhost:5432/tracker_test
-      DATABASE_URL: postgresql://tracker:tracker@localhost:5432/tracker_test
+      DATABASE_URL_DIRECT: postgresql://tracker:tracker@127.0.0.1:5432/tracker_test
+      DATABASE_URL: postgresql://tracker:tracker@127.0.0.1:5432/tracker_test
       SUPABASE_JWT_SECRET: test-secret-for-ci
       SUPABASE_URL: not-used-in-tests
       TOKEN_ENCRYPTION_KEY: ${{ secrets.TOKEN_ENCRYPTION_KEY }}
@@ -37,9 +37,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Stop pre-installed PostgreSQL
-        run: sudo systemctl stop postgresql || true
 
       - name: Set up Python 3.13
         uses: actions/setup-python@v5
