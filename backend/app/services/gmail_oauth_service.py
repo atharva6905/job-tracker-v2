@@ -27,8 +27,14 @@ def build_oauth_flow() -> Flow:
             "redirect_uris": [redirect_uri],
         }
     }
-    flow = Flow.from_client_config(client_config, scopes=GMAIL_SCOPES, redirect_uri=redirect_uri)
-    flow.oauth2session.code_challenge_method = None
+    flow = Flow.from_client_config(
+        client_config, scopes=GMAIL_SCOPES, redirect_uri=redirect_uri
+    )
+    # Disable PKCE — the code verifier is not persisted between
+    # /gmail/connect and /gmail/callback (stateless HTTP), so PKCE
+    # cannot complete. Disable it entirely.
+    flow.code_verifier = None
+    flow.oauth2session._client.code_challenge_method = None
     return flow
 
 
