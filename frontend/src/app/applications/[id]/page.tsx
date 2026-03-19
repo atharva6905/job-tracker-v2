@@ -11,6 +11,7 @@ import { Select, SelectItem } from "@/components/ui/select";
 import { fetchAPI } from "@/lib/api";
 import type { Application, ApplicationStatus, Company, JobDescription } from "@/lib/types";
 import { ArrowLeft, ExternalLink } from "lucide-react";
+import { EmailTimeline } from "@/components/EmailTimeline";
 
 const CORRECTABLE_STATUSES: { value: ApplicationStatus; label: string }[] = [
   { value: "APPLIED", label: "Applied" },
@@ -218,17 +219,7 @@ export default function ApplicationDetailPage() {
           </CardContent>
         </Card>
 
-        {/* Email Timeline Placeholder */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Email History</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              Email history will appear here (coming soon)
-            </p>
-          </CardContent>
-        </Card>
+        <EmailTimeline applicationId={params.id} />
       </main>
     </div>
   );

@@ -3,7 +3,7 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import select
+from sqlalchemy import asc, nullslast, select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -11,6 +11,7 @@ from app.dependencies.auth import get_current_user
 from app.dependencies.rate_limit import limiter
 from app.models.application import Application, ApplicationStatus
 from app.models.job_description import JobDescription
+from app.models.raw_email import RawEmail
 from app.models.user import User
 from app.schemas.applications import (
     ApplicationCreate,
@@ -18,6 +19,7 @@ from app.schemas.applications import (
     ApplicationUpdate,
     JobDescriptionResponse,
 )
+from app.schemas.raw_email import RawEmailResponse
 from app.services.application_service import apply_status_transition
 
 router = APIRouter(prefix="/applications", tags=["applications"])
@@ -142,6 +144,30 @@ def get_job_description(
     if not jd:
         return None
     return jd
+
+
+@router.get("/{application_id}/emails", response_model=list[RawEmailResponse])
+@limiter.limit("60/minute")
+def get_application_emails(
+    request: Request,
+    application_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    application = db.scalar(
+        select(Application).where(
+            Application.id == application_id,
+            Application.user_id == current_user.id,
+        )
+    )
+    if not application:
+        raise HTTPException(status_code=404)
+    emails = db.scalars(
+        select(RawEmail)
+        .where(RawEmail.linked_application_id == application_id)
+        .order_by(nullslast(asc(RawEmail.received_at)))
+    ).all()
+    return emails
 
 
 @router.delete("/{application_id}", status_code=204)
