@@ -34,6 +34,11 @@ jobs:
       GEMINI_API_KEY: not-used-in-tests
       GOOGLE_CLIENT_ID: not-used-in-tests
       GOOGLE_CLIENT_SECRET: not-used-in-tests
+      PGHOST: 127.0.0.1
+      PGPORT: "5432"
+      PGDATABASE: tracker_test
+      PGUSER: tracker
+      PGPASSWORD: tracker
 
     steps:
       - uses: actions/checkout@v4

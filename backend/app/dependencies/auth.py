@@ -4,11 +4,11 @@ import time
 import uuid as uuid_module
 from threading import Lock
 
-_logger = logging.getLogger(__name__)
-
 from dotenv import load_dotenv
 
 load_dotenv()
+
+_logger = logging.getLogger(__name__)
 
 import httpx  # noqa: E402
 from fastapi import Depends, HTTPException, status  # noqa: E402
