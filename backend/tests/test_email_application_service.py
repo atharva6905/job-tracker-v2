@@ -196,8 +196,8 @@ class TestProcessEmailSignal:
         assert app is not None
         assert app.company_id == company.id
 
-    def test_applied_interview_no_op(self, db, test_user, email_account):
-        """APPLIED + INTERVIEW signal → Phase 2 no-op, status unchanged."""
+    def test_applied_interview_transitions(self, db, test_user, email_account):
+        """APPLIED + INTERVIEW signal → status becomes INTERVIEW (Phase 2 wired)."""
         company = _make_company(db, test_user.id)
         app = _make_application(
             db, test_user.id, company.id, ApplicationStatus.APPLIED,
@@ -216,7 +216,9 @@ class TestProcessEmailSignal:
         process_email_signal(db, test_user.id, raw_email, classification)
 
         db.refresh(app)
-        assert app.status == ApplicationStatus.APPLIED  # unchanged
+        db.refresh(raw_email)
+        assert app.status == ApplicationStatus.INTERVIEW
+        assert raw_email.linked_application_id == app.id
 
     def test_duplicate_gmail_message_id_dedup(self, db, test_user, email_account):
         """Duplicate gmail_message_id is not processed twice (dedup in poll worker).

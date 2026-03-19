@@ -40,13 +40,13 @@ def process_email_signal(
     signal = classification.signal
     company_name = classification.company
 
-    if not company_name:
+    if not company_name or not company_name.strip():
         _logger.warning(
             "No company extracted — skipping",
             extra={
                 "gmail_message_id": raw_email.gmail_message_id,
                 "gemini_signal": signal,
-                "action_taken": "no_company_skip",
+                "action_taken": "no_op_null_company",
                 "user_id": str(user_id),
             },
         )
@@ -107,8 +107,8 @@ def _find_matching_application(
             .order_by(Application.created_at.desc())
         )
 
-    # For INTERVIEW / OFFER / REJECTED: find APPLIED or INTERVIEW app
-    return db.scalar(
+    # For INTERVIEW / OFFER / REJECTED: prefer transitional apps (APPLIED, INTERVIEW)
+    app = db.scalar(
         select(Application)
         .join(Company, Application.company_id == Company.id)
         .where(
@@ -120,6 +120,33 @@ def _find_matching_application(
         )
         .order_by(Application.created_at.desc())
     )
+    if app:
+        return app
+
+    # Fallback: match terminal-state apps so _apply_transition can log no-op
+    return db.scalar(
+        select(Application)
+        .join(Company, Application.company_id == Company.id)
+        .where(
+            Application.user_id == user_id,
+            Application.status.in_(
+                [ApplicationStatus.OFFER, ApplicationStatus.REJECTED]
+            ),
+            Company.normalized_name == normalized_company,
+        )
+        .order_by(Application.created_at.desc())
+    )
+
+
+_VALID_TRANSITIONS = {
+    (ApplicationStatus.IN_PROGRESS, ApplicationStatus.APPLIED),
+    (ApplicationStatus.APPLIED, ApplicationStatus.INTERVIEW),
+    (ApplicationStatus.APPLIED, ApplicationStatus.REJECTED),
+    (ApplicationStatus.INTERVIEW, ApplicationStatus.OFFER),
+    (ApplicationStatus.INTERVIEW, ApplicationStatus.REJECTED),
+}
+
+_TERMINAL_STATES = {ApplicationStatus.OFFER, ApplicationStatus.REJECTED}
 
 
 def _apply_transition(
@@ -132,70 +159,13 @@ def _apply_transition(
     """Apply the status transition on an existing application."""
     current = application.status
 
-    # IN_PROGRESS → APPLIED — wired
-    if (
-        current == ApplicationStatus.IN_PROGRESS
-        and target_status == ApplicationStatus.APPLIED
-    ):
-        application.status = ApplicationStatus.APPLIED
-        application.date_applied = (
-            raw_email.received_at.date() if raw_email.received_at else None
-        )
-        raw_email.linked_application_id = application.id
-        db.commit()
+    # Terminal states — no transitions out
+    if current in _TERMINAL_STATES:
         _logger.info(
-            "Application status updated",
+            "Terminal state — no-op",
             extra={
-                "action_taken": "status_updated",
-                "from": "IN_PROGRESS",
-                "to": "APPLIED",
-                "application_id": str(application.id),
-                "user_id": str(user_id),
-            },
-        )
-        return
-
-    # APPLIED → REJECTED — wired
-    if (
-        current == ApplicationStatus.APPLIED
-        and target_status == ApplicationStatus.REJECTED
-    ):
-        application.status = ApplicationStatus.REJECTED
-        raw_email.linked_application_id = application.id
-        db.commit()
-        _logger.info(
-            "Application status updated",
-            extra={
-                "action_taken": "status_updated",
-                "from": "APPLIED",
-                "to": "REJECTED",
-                "application_id": str(application.id),
-                "user_id": str(user_id),
-            },
-        )
-        return
-
-    # Phase 2 transitions — not wired yet
-    if current == ApplicationStatus.APPLIED and target_status == ApplicationStatus.INTERVIEW:
-        _logger.info(
-            "Phase 2 transition — not wired yet",
-            extra={
-                "action_taken": "no_op_phase2",
-                "signal": target_status.value,
-                "application_id": str(application.id),
-                "user_id": str(user_id),
-            },
-        )
-        return
-
-    if current == ApplicationStatus.INTERVIEW and target_status in {
-        ApplicationStatus.OFFER,
-        ApplicationStatus.REJECTED,
-    }:
-        _logger.info(
-            "Phase 2 transition — not wired yet",
-            extra={
-                "action_taken": "no_op_phase2",
+                "action_taken": "no_op_terminal_state",
+                "current_status": current.value,
                 "signal": target_status.value,
                 "application_id": str(application.id),
                 "user_id": str(user_id),
@@ -204,11 +174,39 @@ def _apply_transition(
         return
 
     # Invalid transition — no-op, never raise
+    if (current, target_status) not in _VALID_TRANSITIONS:
+        _logger.info(
+            "Invalid transition — no-op",
+            extra={
+                "action_taken": "no_op_invalid_transition",
+                "signal": target_status.value,
+                "application_id": str(application.id),
+                "user_id": str(user_id),
+            },
+        )
+        return
+
+    # Apply valid transition
+    application.status = target_status
+
+    # IN_PROGRESS → APPLIED sets date_applied from the confirmation email
+    if (
+        current == ApplicationStatus.IN_PROGRESS
+        and target_status == ApplicationStatus.APPLIED
+    ):
+        application.date_applied = (
+            raw_email.received_at.date() if raw_email.received_at else None
+        )
+
+    raw_email.linked_application_id = application.id
+    db.commit()
+
     _logger.info(
-        "Invalid transition — no-op",
+        "Application status updated",
         extra={
-            "action_taken": "no_op_invalid_transition",
-            "reason": f"{current.value} -> {target_status.value} is not valid",
+            "action_taken": "status_updated",
+            "from": current.value,
+            "to": target_status.value,
             "application_id": str(application.id),
             "user_id": str(user_id),
         },
