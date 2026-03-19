@@ -27,7 +27,9 @@ def build_oauth_flow() -> Flow:
             "redirect_uris": [redirect_uri],
         }
     }
-    return Flow.from_client_config(client_config, scopes=GMAIL_SCOPES, redirect_uri=redirect_uri)
+    flow = Flow.from_client_config(client_config, scopes=GMAIL_SCOPES, redirect_uri=redirect_uri)
+    flow.oauth2session.code_challenge_method = None
+    return flow
 
 
 def create_state_token(db: Session, user_id: uuid.UUID) -> str:
