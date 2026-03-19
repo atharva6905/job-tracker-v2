@@ -49,6 +49,7 @@ def poll_gmail_account(
         except ValueError:
             _logger.warning(
                 "Token decryption failed — skipping account",
+                exc_info=True,
                 extra={"email_account_id": account_id, "action_taken": "token_decrypt_error"},
             )
             return
@@ -75,6 +76,7 @@ def poll_gmail_account(
             except Exception as exc:
                 _logger.warning(
                     "Token refresh failed — skipping account",
+                    exc_info=True,
                     extra={
                         "email_account_id": account_id,
                         "action_taken": "token_refresh_failed",
@@ -185,6 +187,7 @@ def poll_gmail_account(
     except Exception as exc:
         _logger.error(
             "Poll job failed",
+            exc_info=True,
             extra={
                 "email_account_id": account_id,
                 "action_taken": "poll_error",
