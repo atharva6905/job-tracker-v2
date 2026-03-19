@@ -55,13 +55,16 @@ def poll_gmail_account(
             return
 
         # Build OAuth credentials from stored tokens
+        expiry = account.token_expiry
+        if expiry is not None and expiry.tzinfo is None:
+            expiry = expiry.replace(tzinfo=timezone.utc)
         credentials = Credentials(
             token=access_token,
             refresh_token=refresh_token,
             token_uri="https://oauth2.googleapis.com/token",
             client_id=os.environ.get("GOOGLE_CLIENT_ID"),
             client_secret=os.environ.get("GOOGLE_CLIENT_SECRET"),
-            expiry=account.token_expiry,
+            expiry=expiry,
         )
 
         # Refresh if expired — update stored ciphertext and continue
