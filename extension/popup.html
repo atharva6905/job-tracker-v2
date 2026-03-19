@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Job Tracker</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      width: 280px;
+      padding: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #ffffff;
+      color: #0f172a;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .icon {
+      font-size: 24px;
+    }
+
+    .title {
+      font-size: 16px;
+      font-weight: 700;
+      color: #0f172a;
+    }
+
+    .subtitle {
+      font-size: 11px;
+      color: #64748b;
+      margin-top: 1px;
+    }
+
+    .description {
+      font-size: 13px;
+      color: #475569;
+      line-height: 1.5;
+      margin-bottom: 16px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    .btn-dashboard {
+      display: block;
+      width: 100%;
+      padding: 10px 16px;
+      background: #3b82f6;
+      color: #ffffff;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      text-align: center;
+      text-decoration: none;
+    }
+
+    .btn-dashboard:hover {
+      background: #2563eb;
+    }
+
+    .note {
+      margin-top: 12px;
+      font-size: 11px;
+      color: #94a3b8;
+      line-height: 1.4;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <span class="icon">📋</span>
+    <div>
+      <div class="title">Job Tracker</div>
+      <div class="subtitle">Zero manual entry</div>
+    </div>
+  </div>
+
+  <p class="description">
+    Automatically captures job applications as you fill them out and tracks email updates from employers.
+  </p>
+
+  <!-- TODO: Update this URL to your production Vercel URL before deploying -->
+  <a class="btn-dashboard" href="http://localhost:3000/dashboard" target="_blank">
+    Open Dashboard
+  </a>
+
+  <p class="note">
+    The extension runs automatically on job application pages.
+  </p>
+
+  <script>
+    document.querySelector(".btn-dashboard").addEventListener("click", (e) => {
+      e.preventDefault();
+      chrome.tabs.create({ url: e.currentTarget.href });
+    });
+  </script>
+</body>
+</html>
