@@ -38,6 +38,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Stop pre-installed PostgreSQL
+        run: sudo systemctl stop postgresql || true
+
       - name: Set up Python 3.13
         uses: actions/setup-python@v5
         with:
