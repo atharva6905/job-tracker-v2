@@ -143,6 +143,7 @@ def classify_email(
             else:
                 _logger.warning(
                     "Gemini API error",
+                    exc_info=True,
                     extra={
                         "gemini_signal": "PARSE_ERROR",
                         "gemini_confidence": 0.0,
