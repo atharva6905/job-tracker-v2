@@ -6,6 +6,7 @@ from email.utils import parsedate_to_datetime
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.database import SessionLocal
 from app.models.email_account import EmailAccount
@@ -159,8 +160,20 @@ def poll_gmail_account(
                     gemini_signal=classification.signal,
                     gemini_confidence=classification.confidence,
                 )
-                db.add(raw_email)
-                db.commit()
+                try:
+                    db.add(raw_email)
+                    db.commit()
+                except IntegrityError:
+                    db.rollback()
+                    _logger.info(
+                        "Skipping duplicate email",
+                        extra={
+                            "gmail_message_id": message_id,
+                            "email_account_id": account_id,
+                            "action_taken": "dedup_skip",
+                        },
+                    )
+                    continue
 
                 _logger.info(
                     "Email classified and stored",
