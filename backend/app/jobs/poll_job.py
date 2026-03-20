@@ -56,8 +56,8 @@ def poll_gmail_account(
 
         # Build OAuth credentials from stored tokens
         expiry = account.token_expiry
-        if expiry is not None and expiry.tzinfo is None:
-            expiry = expiry.replace(tzinfo=timezone.utc)
+        if expiry is not None and expiry.tzinfo is not None:
+            expiry = expiry.replace(tzinfo=None)  # Google auth expects naive UTC datetime
         credentials = Credentials(
             token=access_token,
             refresh_token=refresh_token,
