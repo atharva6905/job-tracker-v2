@@ -11,6 +11,7 @@ error_type, timestamps.
 import json
 import os
 import random
+import re
 import time
 from dataclasses import dataclass
 
@@ -137,7 +138,12 @@ def classify_email(
 
         except genai_errors.APIError as exc:
             if exc.code == 429 and attempt < len(_retry_delays):
-                delay = _retry_delays[attempt] + random.uniform(0, 1)
+                # Prefer the API-suggested retry delay over our hardcoded backoff.
+                # The free tier returns "Please retry in 49s" — far longer than
+                # the 2s/4s/8s values, which all expire before the quota resets.
+                match = re.search(r"Please retry in (\d+(?:\.\d+)?)s", str(exc))
+                delay = float(match.group(1)) if match else _retry_delays[attempt]
+                delay += random.uniform(0, 1)
                 time.sleep(delay)
                 # loop continues to next attempt
             else:
