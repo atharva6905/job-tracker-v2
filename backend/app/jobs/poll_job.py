@@ -200,6 +200,38 @@ def poll_gmail_account(
         account.last_polled_at = datetime.now(timezone.utc)
         db.commit()
 
+        # Retry pass — re-classify any PARSE_ERROR emails that were never linked.
+        # These are emails Gemini failed on (rate limit, network blip) in a previous
+        # poll.  The gmail_message_id dedup check would skip them on re-fetch, so
+        # the only way to recover them is to retry classification here.
+        _actionable = {"APPLIED", "INTERVIEW", "OFFER", "REJECTED"}
+        parse_errors = db.scalars(
+            select(RawEmail).where(
+                RawEmail.email_account_id == account.id,
+                RawEmail.gemini_signal == "PARSE_ERROR",
+                RawEmail.linked_application_id.is_(None),
+            )
+        ).all()
+        for raw_email in parse_errors:
+            classification = classify_email(
+                raw_email.subject, raw_email.sender, raw_email.body_snippet
+            )
+            raw_email.gemini_signal = classification.signal
+            raw_email.gemini_confidence = classification.confidence
+            db.commit()
+            _logger.info(
+                "PARSE_ERROR email reclassified",
+                extra={
+                    "gmail_message_id": raw_email.gmail_message_id,
+                    "email_account_id": account_id,
+                    "gemini_signal": classification.signal,
+                    "gemini_confidence": classification.confidence,
+                    "action_taken": "parse_error_retry",
+                },
+            )
+            if classification.signal in _actionable:
+                process_email_signal(db, account.user_id, raw_email, classification)
+
     except Exception as exc:
         _logger.error(
             "Poll job failed",
