@@ -162,11 +162,13 @@ def gmail_poll(
     """
     Trigger manual email poll for an account.
 
-    When ``force=true``, resets ``last_polled_at`` to NULL before polling so
-    the worker re-fetches from the 30-day fallback window.  Use this to
-    recover emails that were pre-filtered before a keyword fix landed.
+    When ``force=true``, resets ``last_polled_at`` to NULL then triggers the
+    APScheduler job immediately in its background thread pool.  This avoids
+    blocking the request handler while 30 days of emails are re-processed.
     Already-stored emails are safely skipped by the dedup check.
     """
+    from datetime import datetime, timezone
+
     account = db.scalar(
         select(EmailAccount).where(
             EmailAccount.id == account_id,
@@ -179,6 +181,15 @@ def gmail_poll(
     if force:
         account.last_polled_at = None
         db.commit()
+        try:
+            scheduler.modify_job(
+                f"poll_{account.id}",
+                next_run_time=datetime.now(timezone.utc),
+            )
+        except JobLookupError:
+            # Scheduler job not registered yet — fall back to direct call
+            poll_gmail_account(str(account_id))
+        return {"detail": "Re-sync started"}
 
     poll_gmail_account(str(account_id))
     return {"detail": "Poll triggered"}
