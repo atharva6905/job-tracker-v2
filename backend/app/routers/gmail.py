@@ -155,10 +155,18 @@ def gmail_accounts(
 def gmail_poll(
     account_id: str,
     request: Request,
+    force: bool = False,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Trigger manual email poll for an account. Implemented in chunk 10."""
+    """
+    Trigger manual email poll for an account.
+
+    When ``force=true``, resets ``last_polled_at`` to NULL before polling so
+    the worker re-fetches from the 30-day fallback window.  Use this to
+    recover emails that were pre-filtered before a keyword fix landed.
+    Already-stored emails are safely skipped by the dedup check.
+    """
     account = db.scalar(
         select(EmailAccount).where(
             EmailAccount.id == account_id,
@@ -167,6 +175,10 @@ def gmail_poll(
     )
     if not account:
         raise HTTPException(status_code=404)
+
+    if force:
+        account.last_polled_at = None
+        db.commit()
 
     poll_gmail_account(str(account_id))
     return {"detail": "Poll triggered"}

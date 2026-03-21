@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { fetchAPI } from "@/lib/api";
 import type { EmailAccount } from "@/lib/types";
-import { ArrowLeft, Download, Mail, Trash2 } from "lucide-react";
+import { ArrowLeft, Download, Mail, RefreshCw, Trash2 } from "lucide-react";
 
 export default function SettingsPage() {
   const { user, signOut } = useAuth();
@@ -27,6 +27,7 @@ export default function SettingsPage() {
   const [disconnectId, setDisconnectId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [resyncingId, setResyncingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchAPI<EmailAccount[]>("/gmail/accounts")
@@ -53,6 +54,17 @@ export default function SettingsPage() {
       // Error handled by fetchAPI
     } finally {
       setDisconnectId(null);
+    }
+  };
+
+  const handleResync = async (accountId: string) => {
+    setResyncingId(accountId);
+    try {
+      await fetchAPI(`/gmail/accounts/${accountId}/poll?force=true`, { method: "POST" });
+    } catch {
+      // Error handled by fetchAPI
+    } finally {
+      setResyncingId(null);
     }
   };
 
@@ -141,13 +153,25 @@ export default function SettingsPage() {
                       <Mail className="h-4 w-4 text-muted-foreground" />
                       <span className="text-sm">{account.email}</span>
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setDisconnectId(account.id)}
-                    >
-                      Disconnect
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={resyncingId === account.id}
+                        onClick={() => handleResync(account.id)}
+                        title="Re-sync emails from the last 30 days"
+                      >
+                        <RefreshCw className={`h-3 w-3 mr-1 ${resyncingId === account.id ? "animate-spin" : ""}`} />
+                        {resyncingId === account.id ? "Syncing…" : "Re-sync"}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setDisconnectId(account.id)}
+                      >
+                        Disconnect
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>
