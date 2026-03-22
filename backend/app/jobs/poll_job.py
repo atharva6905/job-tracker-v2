@@ -36,7 +36,6 @@ def _load_active_company_names(db, user_id):
     the company, and the next matching email will attempt a transition (handled
     as a no-op by _apply_transition's invalid-transition guard if needed).
     """
-    from uuid import UUID
     rows = db.execute(
         select(Company.normalized_name)
         .join(Application, Application.company_id == Company.id)

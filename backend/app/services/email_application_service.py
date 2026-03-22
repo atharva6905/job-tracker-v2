@@ -33,8 +33,9 @@ def process_email_signal(
     classification: GeminiClassificationResult,
 ) -> None:
     """
-    Find or create an application matching the classified email, then apply
-    the appropriate status transition.
+    Find an existing application matching the classified email and apply the
+    appropriate status transition. If no matching application exists, this is
+    a no-op.
     """
     signal = classification.signal
     company_name = classification.company
