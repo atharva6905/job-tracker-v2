@@ -85,6 +85,10 @@ def _run_poll(db: Session, account_id: str, gmail_client: GmailClientInterface) 
         patch("app.jobs.poll_job.SessionLocal", return_value=wrapped),
         patch("app.jobs.poll_job.classify_email", return_value=_MOCK_CLASSIFICATION),
         patch("app.jobs.poll_job.process_email_signal"),
+        patch(
+            "app.jobs.poll_job._load_active_company_names",
+            return_value={"test company"},
+        ),
     ):
         poll_gmail_account(account_id, gmail_client=gmail_client)
     wrapped.close.assert_called_once()
@@ -248,3 +252,226 @@ class TestPollGmailAccount:
         """poll_gmail_account logs a warning and returns when account is not found."""
         _run_poll(db, str(uuid.uuid4()), MockGmailClient(messages=[]))
         # No exception raised — the job silently skips the unknown account
+
+
+class TestInProgressGate:
+    """Tests for the two-level gate that skips emails without matching active applications."""
+
+    def test_no_active_apps_skips_gemini(self, db, test_user):
+        """A1/B1: When the user has no active applications, Gemini is never called."""
+        account = _make_account(db, test_user)
+        msg = _ats_message("msg_gate_001")
+
+        from app.jobs.poll_job import poll_gmail_account
+
+        wrapped = MagicMock(wraps=db)
+        wrapped.close = MagicMock()
+        mock_classify = MagicMock()
+
+        with (
+            patch("app.jobs.poll_job.SessionLocal", return_value=wrapped),
+            patch("app.jobs.poll_job.classify_email", mock_classify),
+            patch("app.jobs.poll_job.process_email_signal"),
+            # _load_active_company_names returns the real result: empty set (no apps)
+        ):
+            poll_gmail_account(str(account.id), gmail_client=MockGmailClient(messages=[msg]))
+
+        mock_classify.assert_not_called()
+
+    def test_matching_company_stores_and_triggers_transition(self, db, test_user):
+        """B2/C2: Email whose company matches an active app is stored and transitioned."""
+        from app.models.application import Application, ApplicationStatus
+        from app.models.company import Company
+        from app.utils.company import normalize_company_name
+
+        account = _make_account(db, test_user)
+
+        # Create an IN_PROGRESS application for "Test Company" (matches _MOCK_CLASSIFICATION.company)
+        company = Company(
+            user_id=test_user.id,
+            name="Test Company",
+            normalized_name=normalize_company_name("Test Company"),
+        )
+        db.add(company)
+        db.flush()
+        app = Application(
+            user_id=test_user.id,
+            company_id=company.id,
+            role="Software Engineer",
+            status=ApplicationStatus.IN_PROGRESS,
+        )
+        db.add(app)
+        db.flush()
+
+        msg = _ats_message("msg_gate_002")
+        mock_process = MagicMock()
+
+        wrapped = MagicMock(wraps=db)
+        wrapped.close = MagicMock()
+
+        from app.jobs.poll_job import poll_gmail_account
+
+        with (
+            patch("app.jobs.poll_job.SessionLocal", return_value=wrapped),
+            patch("app.jobs.poll_job.classify_email", return_value=_MOCK_CLASSIFICATION),
+            patch("app.jobs.poll_job.process_email_signal", mock_process),
+        ):
+            poll_gmail_account(str(account.id), gmail_client=MockGmailClient(messages=[msg]))
+
+        # Email stored in raw_emails
+        from sqlalchemy import select
+        from app.models.raw_email import RawEmail
+        row = db.scalar(select(RawEmail).where(RawEmail.gmail_message_id == "msg_gate_002"))
+        assert row is not None
+        assert row.gemini_signal == "APPLIED"
+        # Transition was triggered
+        mock_process.assert_called_once()
+
+    def test_non_matching_company_not_stored(self, db, test_user):
+        """C1: Email whose company has no matching active app is dropped — not stored."""
+        from app.models.application import Application, ApplicationStatus
+        from app.models.company import Company
+        from app.utils.company import normalize_company_name
+
+        account = _make_account(db, test_user)
+
+        # Active app for "Acme Corp" — does NOT match "Test Company" from _MOCK_CLASSIFICATION
+        company = Company(
+            user_id=test_user.id,
+            name="Acme Corp",
+            normalized_name=normalize_company_name("Acme Corp"),
+        )
+        db.add(company)
+        db.flush()
+        db.add(Application(
+            user_id=test_user.id,
+            company_id=company.id,
+            role="Engineer",
+            status=ApplicationStatus.IN_PROGRESS,
+        ))
+        db.flush()
+
+        msg = _ats_message("msg_gate_003")
+        wrapped = MagicMock(wraps=db)
+        wrapped.close = MagicMock()
+
+        from app.jobs.poll_job import poll_gmail_account
+        from sqlalchemy import select
+        from app.models.raw_email import RawEmail
+
+        with (
+            patch("app.jobs.poll_job.SessionLocal", return_value=wrapped),
+            patch("app.jobs.poll_job.classify_email", return_value=_MOCK_CLASSIFICATION),
+            patch("app.jobs.poll_job.process_email_signal"),
+        ):
+            poll_gmail_account(str(account.id), gmail_client=MockGmailClient(messages=[msg]))
+
+        row = db.scalar(select(RawEmail).where(RawEmail.gmail_message_id == "msg_gate_003"))
+        assert row is None  # fine gate dropped it
+
+    def test_null_company_from_gemini_not_stored(self, db, test_user):
+        """C3: APPLIED signal with no company extracted → dropped by fine gate."""
+        account = _make_account(db, test_user)
+        msg = _ats_message("msg_gate_004")
+
+        null_company_classification = GeminiClassificationResult(
+            company=None,
+            role="Software Engineer",
+            signal="APPLIED",
+            confidence=0.95,
+        )
+
+        wrapped = MagicMock(wraps=db)
+        wrapped.close = MagicMock()
+
+        from app.jobs.poll_job import poll_gmail_account
+        from sqlalchemy import select
+        from app.models.raw_email import RawEmail
+
+        with (
+            patch("app.jobs.poll_job.SessionLocal", return_value=wrapped),
+            patch("app.jobs.poll_job.classify_email", return_value=null_company_classification),
+            patch("app.jobs.poll_job.process_email_signal"),
+            patch(
+                "app.jobs.poll_job._load_active_company_names",
+                return_value={"test company"},
+            ),
+        ):
+            poll_gmail_account(str(account.id), gmail_client=MockGmailClient(messages=[msg]))
+
+        row = db.scalar(select(RawEmail).where(RawEmail.gmail_message_id == "msg_gate_004"))
+        assert row is None
+
+    def test_parse_error_stored_when_active_apps_exist(self, db, test_user):
+        """D1: PARSE_ERROR + active apps present → email stored (can't gate by company)."""
+        account = _make_account(db, test_user)
+        msg = _ats_message("msg_gate_005")
+
+        parse_error_classification = GeminiClassificationResult(
+            company=None,
+            role=None,
+            signal="PARSE_ERROR",
+            confidence=0.0,
+        )
+
+        wrapped = MagicMock(wraps=db)
+        wrapped.close = MagicMock()
+
+        from app.jobs.poll_job import poll_gmail_account
+        from sqlalchemy import select
+        from app.models.raw_email import RawEmail
+
+        with (
+            patch("app.jobs.poll_job.SessionLocal", return_value=wrapped),
+            patch("app.jobs.poll_job.classify_email", return_value=parse_error_classification),
+            patch("app.jobs.poll_job.process_email_signal"),
+            patch(
+                "app.jobs.poll_job._load_active_company_names",
+                return_value={"test company"},
+            ),
+        ):
+            poll_gmail_account(str(account.id), gmail_client=MockGmailClient(messages=[msg]))
+
+        row = db.scalar(select(RawEmail).where(RawEmail.gmail_message_id == "msg_gate_005"))
+        assert row is not None
+        assert row.gemini_signal == "PARSE_ERROR"
+
+    def test_active_company_set_excludes_terminal_states(self, db, test_user):
+        """A2: OFFER and REJECTED apps are excluded from the active company set."""
+        from app.jobs.poll_job import _load_active_company_names
+        from app.models.application import Application, ApplicationStatus
+        from app.models.company import Company
+        from app.utils.company import normalize_company_name
+
+        # Create companies and apps in all statuses
+        # Note: names chosen to avoid legal suffix stripping (e.g. "Corp" is stripped)
+        statuses = [
+            ("Acme Active", ApplicationStatus.IN_PROGRESS),
+            ("Acme Applied", ApplicationStatus.APPLIED),
+            ("Acme Interview", ApplicationStatus.INTERVIEW),
+            ("Acme Offer", ApplicationStatus.OFFER),
+            ("Acme Rejected", ApplicationStatus.REJECTED),
+        ]
+        for name, status in statuses:
+            company = Company(
+                user_id=test_user.id,
+                name=name,
+                normalized_name=normalize_company_name(name),
+            )
+            db.add(company)
+            db.flush()
+            db.add(Application(
+                user_id=test_user.id,
+                company_id=company.id,
+                role="Engineer",
+                status=status,
+            ))
+        db.flush()
+
+        result = _load_active_company_names(db, test_user.id)
+
+        assert "acme active" in result
+        assert "acme applied" in result
+        assert "acme interview" in result
+        assert "acme offer" not in result      # terminal — excluded
+        assert "acme rejected" not in result   # terminal — excluded

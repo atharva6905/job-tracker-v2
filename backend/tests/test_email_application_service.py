@@ -145,8 +145,8 @@ class TestProcessEmailSignal:
         assert app_no_url.status == ApplicationStatus.IN_PROGRESS
         assert raw_email.linked_application_id == app_with_url.id
 
-    def test_no_match_creates_applied(self, db, test_user, email_account):
-        """No matching app + APPLIED signal → creates new APPLIED application."""
+    def test_no_match_is_no_op(self, db, test_user, email_account):
+        """No matching application + APPLIED signal → no-op. No new application created."""
         raw_email = _make_raw_email(db, email_account)
 
         classification = GeminiClassificationResult(
@@ -158,19 +158,18 @@ class TestProcessEmailSignal:
 
         process_email_signal(db, test_user.id, raw_email, classification)
 
-        app = db.scalar(
-            select(Application).where(
-                Application.user_id == test_user.id,
-                Application.status == ApplicationStatus.APPLIED,
-            )
+        count = db.scalar(
+            select(func.count())
+            .select_from(Application)
+            .where(Application.user_id == test_user.id)
         )
-        assert app is not None
-        assert app.role == "Data Scientist"
-        assert raw_email.linked_application_id == app.id
+        assert count == 0  # no application created
+        assert raw_email.linked_application_id is None  # not linked
 
     def test_company_normalization_google_llc(self, db, test_user, email_account):
-        """'Google LLC' normalizes to 'google' and reuses the existing 'Google' company."""
+        """'Google LLC' normalizes to 'google' and transitions the existing 'Google' IN_PROGRESS app."""
         company = _make_company(db, test_user.id, name="Google")
+        app = _make_application(db, test_user.id, company.id, ApplicationStatus.IN_PROGRESS)
         raw_email = _make_raw_email(db, email_account)
 
         classification = GeminiClassificationResult(
@@ -190,11 +189,10 @@ class TestProcessEmailSignal:
         )
         assert count == 1
 
-        app = db.scalar(
-            select(Application).where(Application.user_id == test_user.id)
-        )
-        assert app is not None
-        assert app.company_id == company.id
+        # The existing IN_PROGRESS app should now be APPLIED
+        db.refresh(app)
+        assert app.status == ApplicationStatus.APPLIED
+        assert raw_email.linked_application_id == app.id
 
     def test_applied_interview_transitions(self, db, test_user, email_account):
         """APPLIED + INTERVIEW signal → status becomes INTERVIEW (Phase 2 wired)."""
@@ -301,3 +299,25 @@ class TestProcessEmailSignal:
             .where(Application.user_id == test_user.id)
         )
         assert count == 0
+
+    def test_no_match_safety_net_logs_no_op(self, db, test_user, email_account):
+        """E1: Safety net — when process_email_signal finds no match, it is a no-op (no crash, no app created)."""
+        raw_email = _make_raw_email(db, email_account)
+
+        classification = GeminiClassificationResult(
+            company="Nonexistent Corp",
+            role="Engineer",
+            signal="INTERVIEW",
+            confidence=0.90,
+        )
+
+        # No application exists for "Nonexistent Corp" in any state
+        process_email_signal(db, test_user.id, raw_email, classification)
+
+        count = db.scalar(
+            select(func.count())
+            .select_from(Application)
+            .where(Application.user_id == test_user.id)
+        )
+        assert count == 0
+        assert raw_email.linked_application_id is None
