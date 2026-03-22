@@ -16,7 +16,7 @@ from app.models.email_account import EmailAccount
 from app.models.raw_email import RawEmail
 from app.utils.company import normalize_company_name
 from app.services.email_application_service import process_email_signal
-from app.services.gemini_service import classify_email, _ACTIONABLE_SIGNALS
+from app.services.gemini_service import classify_email, ACTIONABLE_SIGNALS
 from app.utils.email_filter import is_job_related
 from app.utils.encryption import decrypt_token, encrypt_token
 from app.utils.gmail_client import GmailClientInterface, RealGmailClient
@@ -254,7 +254,7 @@ def poll_gmail_account(
                 )
 
                 # Trigger application status update for actionable signals
-                if classification.signal in _ACTIONABLE_SIGNALS:
+                if classification.signal in ACTIONABLE_SIGNALS:
                     process_email_signal(
                         db, account.user_id, raw_email, classification
                     )
@@ -297,7 +297,7 @@ def poll_gmail_account(
             # Re-gate: check if company now extracted and matches an active application.
             # active_companies was loaded at poll start — intentionally stale (snapshot).
             # Do not re-query here; the set is correct for this poll cycle.
-            if classification.signal in _ACTIONABLE_SIGNALS:
+            if classification.signal in ACTIONABLE_SIGNALS:
                 if (
                     classification.company
                     and normalize_company_name(classification.company) in active_companies
