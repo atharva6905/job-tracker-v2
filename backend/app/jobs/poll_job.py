@@ -7,6 +7,7 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
 from app.models.application import Application, ApplicationStatus
@@ -22,9 +23,10 @@ from app.utils.gmail_client import GmailClientInterface, RealGmailClient
 from app.utils.logging import get_logger
 
 _logger = get_logger("gmail_poller")
+_ACTIONABLE_SIGNALS = {"APPLIED", "INTERVIEW", "OFFER", "REJECTED"}
 
 
-def _load_active_company_names(db, user_id):
+def _load_active_company_names(db: Session, user_id: uuid.UUID) -> set[str]:
     """
     Returns the set of normalized company names for all active (non-terminal)
     applications belonging to this user. Used as a coarse gate before Gemini.
@@ -253,8 +255,7 @@ def poll_gmail_account(
                 )
 
                 # Trigger application status update for actionable signals
-                _actionable = {"APPLIED", "INTERVIEW", "OFFER", "REJECTED"}
-                if classification.signal in _actionable:
+                if classification.signal in _ACTIONABLE_SIGNALS:
                     process_email_signal(
                         db, account.user_id, raw_email, classification
                     )
@@ -270,7 +271,6 @@ def poll_gmail_account(
         # These are emails Gemini failed on (rate limit, network blip) in a previous
         # poll.  The gmail_message_id dedup check would skip them on re-fetch, so
         # the only way to recover them is to retry classification here.
-        _actionable = {"APPLIED", "INTERVIEW", "OFFER", "REJECTED"}
         parse_errors = db.scalars(
             select(RawEmail).where(
                 RawEmail.email_account_id == account.id,
@@ -298,7 +298,7 @@ def poll_gmail_account(
             # Re-gate: check if company now extracted and matches an active application.
             # active_companies was loaded at poll start — intentionally stale (snapshot).
             # Do not re-query here; the set is correct for this poll cycle.
-            if classification.signal in _actionable:
+            if classification.signal in _ACTIONABLE_SIGNALS:
                 if (
                     classification.company
                     and normalize_company_name(classification.company) in active_companies
