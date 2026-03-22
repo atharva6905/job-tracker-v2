@@ -393,10 +393,11 @@ class TestInProgressGate:
         from sqlalchemy import select
         from app.models.raw_email import RawEmail
 
+        mock_process = MagicMock()
         with (
             patch("app.jobs.poll_job.SessionLocal", return_value=wrapped),
             patch("app.jobs.poll_job.classify_email", return_value=null_company_classification),
-            patch("app.jobs.poll_job.process_email_signal"),
+            patch("app.jobs.poll_job.process_email_signal", mock_process),
             patch(
                 "app.jobs.poll_job._load_active_company_names",
                 return_value={"test company"},
@@ -406,6 +407,7 @@ class TestInProgressGate:
 
         row = db.scalar(select(RawEmail).where(RawEmail.gmail_message_id == "msg_gate_004"))
         assert row is None
+        mock_process.assert_not_called()  # fine gate prevented process_email_signal
         wrapped.close.assert_called_once()
 
     def test_parse_error_stored_when_active_apps_exist(self, db, test_user):
