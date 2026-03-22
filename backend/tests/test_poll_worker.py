@@ -277,6 +277,7 @@ class TestInProgressGate:
             poll_gmail_account(str(account.id), gmail_client=MockGmailClient(messages=[msg]))
 
         mock_classify.assert_not_called()
+        wrapped.close.assert_called_once()
 
     def test_matching_company_stores_and_triggers_transition(self, db, test_user):
         """B2/C2: Email whose company matches an active app is stored and transitioned."""
@@ -326,6 +327,7 @@ class TestInProgressGate:
         assert row.gemini_signal == "APPLIED"
         # Transition was triggered
         mock_process.assert_called_once()
+        wrapped.close.assert_called_once()
 
     def test_non_matching_company_not_stored(self, db, test_user):
         """C1: Email whose company has no matching active app is dropped — not stored."""
@@ -352,6 +354,7 @@ class TestInProgressGate:
         db.flush()
 
         msg = _ats_message("msg_gate_003")
+        mock_process = MagicMock()
         wrapped = MagicMock(wraps=db)
         wrapped.close = MagicMock()
 
@@ -362,12 +365,14 @@ class TestInProgressGate:
         with (
             patch("app.jobs.poll_job.SessionLocal", return_value=wrapped),
             patch("app.jobs.poll_job.classify_email", return_value=_MOCK_CLASSIFICATION),
-            patch("app.jobs.poll_job.process_email_signal"),
+            patch("app.jobs.poll_job.process_email_signal", mock_process),
         ):
             poll_gmail_account(str(account.id), gmail_client=MockGmailClient(messages=[msg]))
 
         row = db.scalar(select(RawEmail).where(RawEmail.gmail_message_id == "msg_gate_003"))
         assert row is None  # fine gate dropped it
+        mock_process.assert_not_called()  # fine gate prevented process_email_signal
+        wrapped.close.assert_called_once()
 
     def test_null_company_from_gemini_not_stored(self, db, test_user):
         """C3: APPLIED signal with no company extracted → dropped by fine gate."""
@@ -401,6 +406,7 @@ class TestInProgressGate:
 
         row = db.scalar(select(RawEmail).where(RawEmail.gmail_message_id == "msg_gate_004"))
         assert row is None
+        wrapped.close.assert_called_once()
 
     def test_parse_error_stored_when_active_apps_exist(self, db, test_user):
         """D1: PARSE_ERROR + active apps present → email stored (can't gate by company)."""
@@ -435,6 +441,7 @@ class TestInProgressGate:
         row = db.scalar(select(RawEmail).where(RawEmail.gmail_message_id == "msg_gate_005"))
         assert row is not None
         assert row.gemini_signal == "PARSE_ERROR"
+        wrapped.close.assert_called_once()
 
     def test_active_company_set_excludes_terminal_states(self, db, test_user):
         """A2: OFFER and REJECTED apps are excluded from the active company set."""
@@ -475,3 +482,104 @@ class TestInProgressGate:
         assert "acme interview" in result
         assert "acme offer" not in result      # terminal — excluded
         assert "acme rejected" not in result   # terminal — excluded
+
+    def test_parse_error_retry_matching_company_triggers_transition(self, db, test_user):
+        """F1: PARSE_ERROR retry — company now extracted and in active set → process_email_signal called."""
+        from app.models.raw_email import RawEmail
+        from datetime import datetime, timezone
+
+        account = _make_account(db, test_user)
+
+        # Pre-seed a stored PARSE_ERROR email (from a previous failed poll cycle)
+        existing = RawEmail(
+            email_account_id=account.id,
+            gmail_message_id="msg_retry_f1",
+            subject="Application Update",
+            sender="no-reply@greenhouse.io",
+            received_at=datetime.now(timezone.utc),
+            body_snippet="We wanted to follow up...",
+            gemini_signal="PARSE_ERROR",
+            gemini_confidence=0.0,
+        )
+        db.add(existing)
+        db.flush()
+
+        # Retry re-classification returns a company that IS in active_companies
+        retry_classification = GeminiClassificationResult(
+            company="Test Company",
+            role="Software Engineer",
+            signal="APPLIED",
+            confidence=0.90,
+        )
+
+        mock_process = MagicMock()
+        wrapped = MagicMock(wraps=db)
+        wrapped.close = MagicMock()
+
+        from app.jobs.poll_job import poll_gmail_account
+
+        with (
+            patch("app.jobs.poll_job.SessionLocal", return_value=wrapped),
+            # Empty inbox — only retry loop fires, not main loop
+            patch("app.jobs.poll_job.classify_email", return_value=retry_classification),
+            patch("app.jobs.poll_job.process_email_signal", mock_process),
+            patch(
+                "app.jobs.poll_job._load_active_company_names",
+                return_value={"test company"},
+            ),
+        ):
+            poll_gmail_account(str(account.id), gmail_client=MockGmailClient(messages=[]))
+
+        # Retry loop should have called process_email_signal
+        mock_process.assert_called_once()
+        wrapped.close.assert_called_once()
+
+    def test_parse_error_retry_non_matching_company_no_transition(self, db, test_user):
+        """F2: PARSE_ERROR retry — company extracted but NOT in active set → no transition."""
+        from app.models.raw_email import RawEmail
+        from datetime import datetime, timezone
+
+        account = _make_account(db, test_user)
+
+        # Pre-seed a stored PARSE_ERROR email
+        existing = RawEmail(
+            email_account_id=account.id,
+            gmail_message_id="msg_retry_f2",
+            subject="Application Update",
+            sender="no-reply@greenhouse.io",
+            received_at=datetime.now(timezone.utc),
+            body_snippet="We wanted to follow up...",
+            gemini_signal="PARSE_ERROR",
+            gemini_confidence=0.0,
+        )
+        db.add(existing)
+        db.flush()
+
+        # Retry re-classification returns a company NOT in active_companies
+        retry_classification = GeminiClassificationResult(
+            company="Unknown Corp",
+            role="Software Engineer",
+            signal="APPLIED",
+            confidence=0.90,
+        )
+
+        mock_process = MagicMock()
+        wrapped = MagicMock(wraps=db)
+        wrapped.close = MagicMock()
+
+        from app.jobs.poll_job import poll_gmail_account
+
+        with (
+            patch("app.jobs.poll_job.SessionLocal", return_value=wrapped),
+            patch("app.jobs.poll_job.classify_email", return_value=retry_classification),
+            patch("app.jobs.poll_job.process_email_signal", mock_process),
+            patch(
+                "app.jobs.poll_job._load_active_company_names",
+                return_value={"test company"},  # "unknown corp" not in this set
+            ),
+        ):
+            poll_gmail_account(str(account.id), gmail_client=MockGmailClient(messages=[]))
+
+        # process_email_signal should NOT be called — company didn't match
+        mock_process.assert_not_called()
+        wrapped.close.assert_called_once()
