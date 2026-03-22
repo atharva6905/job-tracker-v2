@@ -16,14 +16,13 @@ from app.models.email_account import EmailAccount
 from app.models.raw_email import RawEmail
 from app.utils.company import normalize_company_name
 from app.services.email_application_service import process_email_signal
-from app.services.gemini_service import classify_email
+from app.services.gemini_service import classify_email, _ACTIONABLE_SIGNALS
 from app.utils.email_filter import is_job_related
 from app.utils.encryption import decrypt_token, encrypt_token
 from app.utils.gmail_client import GmailClientInterface, RealGmailClient
 from app.utils.logging import get_logger
 
 _logger = get_logger("gmail_poller")
-_ACTIONABLE_SIGNALS = {"APPLIED", "INTERVIEW", "OFFER", "REJECTED"}
 
 
 def _load_active_company_names(db: Session, user_id: uuid.UUID) -> set[str]:
