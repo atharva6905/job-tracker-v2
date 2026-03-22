@@ -8,6 +8,7 @@ All DB state is rolled back per test via the conftest.py transaction fixture.
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.application import Application, ApplicationStatus
@@ -240,10 +241,9 @@ def test_in_progress_interview_signal_is_noop(db: Session, test_user: User):
     db.refresh(app)
     db.refresh(raw)
     assert app.status == ApplicationStatus.IN_PROGRESS
-    # No match found (IN_PROGRESS excluded from non-APPLIED lookup),
-    # so a new INTERVIEW application is created rather than modifying the existing one.
-    assert raw.linked_application_id != app.id
-    assert raw.linked_application_id is not None
+    # No APPLIED/INTERVIEW app found — INTERVIEW signal is a no-op, no app created
+    assert raw.linked_application_id is None
+    assert app.status == ApplicationStatus.IN_PROGRESS  # original app unchanged
 
 
 # ---------------------------------------------------------------------------
@@ -318,11 +318,11 @@ def test_empty_company_is_noop(db: Session, test_user: User):
 
 
 # ---------------------------------------------------------------------------
-# 10. INTERVIEW signal, no matching app → creates new INTERVIEW application
+# 10. INTERVIEW signal, no matching app → no-op
 # ---------------------------------------------------------------------------
 
 
-def test_interview_signal_no_match_creates_application(
+def test_interview_signal_no_match_is_noop(
     db: Session, test_user: User
 ):
     account = _make_email_account(db, test_user)
@@ -336,15 +336,12 @@ def test_interview_signal_no_match_creates_application(
     )
 
     db.refresh(raw)
-    assert raw.linked_application_id is not None
+    # No matching application exists — no-op, nothing created
+    assert raw.linked_application_id is None
 
-    created = db.get(Application, raw.linked_application_id)
-    assert created is not None
-    assert created.user_id == test_user.id
-    assert created.status == ApplicationStatus.INTERVIEW
-    assert created.role == "PM"
-    assert created.date_applied is None
-
-    company = db.get(Company, created.company_id)
-    assert company is not None
-    assert company.normalized_name == normalize_company_name("Brand New Corp")
+    count = db.scalar(
+        select(func.count())
+        .select_from(Application)
+        .where(Application.user_id == test_user.id)
+    )
+    assert count == 0
