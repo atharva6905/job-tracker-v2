@@ -46,7 +46,7 @@ signal definitions:
 """
 
 _VALID_SIGNALS = {"APPLIED", "INTERVIEW", "OFFER", "REJECTED", "IRRELEVANT"}
-_ACTIONABLE_SIGNALS = {"APPLIED", "INTERVIEW", "OFFER", "REJECTED"}
+ACTIONABLE_SIGNALS = {"APPLIED", "INTERVIEW", "OFFER", "REJECTED"}
 _CONFIDENCE_THRESHOLD = 0.75
 
 
@@ -117,7 +117,7 @@ def classify_email(
             role = parsed.get("role") or None
 
             # Confidence gate — only applies to actionable signals, not IRRELEVANT
-            if signal in _ACTIONABLE_SIGNALS and confidence < _CONFIDENCE_THRESHOLD:
+            if signal in ACTIONABLE_SIGNALS and confidence < _CONFIDENCE_THRESHOLD:
                 signal = "BELOW_THRESHOLD"
 
             result = GeminiClassificationResult(
