@@ -9,8 +9,11 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from app.database import SessionLocal
+from app.models.application import Application, ApplicationStatus
+from app.models.company import Company
 from app.models.email_account import EmailAccount
 from app.models.raw_email import RawEmail
+from app.utils.company import normalize_company_name
 from app.services.email_application_service import process_email_signal
 from app.services.gemini_service import classify_email
 from app.utils.email_filter import is_job_related
@@ -19,6 +22,34 @@ from app.utils.gmail_client import GmailClientInterface, RealGmailClient
 from app.utils.logging import get_logger
 
 _logger = get_logger("gmail_poller")
+
+
+def _load_active_company_names(db, user_id):
+    """
+    Returns the set of normalized company names for all active (non-terminal)
+    applications belonging to this user. Used as a coarse gate before Gemini.
+    Active = IN_PROGRESS, APPLIED, INTERVIEW (excludes OFFER, REJECTED).
+
+    Loaded ONCE per poll cycle — do NOT call this per-email; it would change
+    semantics and create N+1 queries. The set is intentionally a snapshot:
+    if an email transitions an app mid-poll, active_companies still contains
+    the company, and the next matching email will attempt a transition (handled
+    as a no-op by _apply_transition's invalid-transition guard if needed).
+    """
+    from uuid import UUID
+    rows = db.execute(
+        select(Company.normalized_name)
+        .join(Application, Application.company_id == Company.id)
+        .where(
+            Application.user_id == user_id,
+            Application.status.in_([
+                ApplicationStatus.IN_PROGRESS,
+                ApplicationStatus.APPLIED,
+                ApplicationStatus.INTERVIEW,
+            ])
+        )
+    ).scalars().all()
+    return set(rows)
 
 
 def poll_gmail_account(
@@ -92,6 +123,8 @@ def poll_gmail_account(
         if gmail_client is None:
             gmail_client = RealGmailClient(credentials)
 
+        active_companies = _load_active_company_names(db, account.user_id)
+
         since = account.last_polled_at or (
             datetime.now(timezone.utc) - timedelta(days=30)
         )
@@ -147,8 +180,42 @@ def poll_gmail_account(
                     )
                     continue
 
+                # Coarse gate: skip Gemini entirely if user has no active applications
+                if not active_companies:
+                    _logger.info(
+                        "No active applications — skipping email",
+                        extra={
+                            "gmail_message_id": message_id,
+                            "email_account_id": account_id,
+                            "action_taken": "no_in_progress_match",
+                        },
+                    )
+                    continue
+
                 # Classify with Gemini before storing
                 classification = classify_email(subject, sender, body_snippet)
+
+                # Fine gate: skip if classified company has no matching active application.
+                # PARSE_ERROR exception: cannot gate by company (Gemini failed to extract).
+                # Store it so the retry loop can re-gate once company name is recovered.
+                # Short-circuit on not classification.company to skip normalization when absent.
+                if (
+                    classification.signal != "PARSE_ERROR"
+                    and (
+                        not classification.company
+                        or normalize_company_name(classification.company) not in active_companies
+                    )
+                ):
+                    _logger.info(
+                        "Email company has no active application — skipping",
+                        extra={
+                            "gmail_message_id": message_id,
+                            "email_account_id": account_id,
+                            "gemini_signal": classification.signal,
+                            "action_taken": "no_in_progress_match",
+                        },
+                    )
+                    continue
 
                 raw_email = RawEmail(
                     email_account_id=account.id,
@@ -229,8 +296,25 @@ def poll_gmail_account(
                     "action_taken": "parse_error_retry",
                 },
             )
+            # Re-gate: check if company now extracted and matches an active application.
+            # active_companies was loaded at poll start — intentionally stale (snapshot).
+            # Do not re-query here; the set is correct for this poll cycle.
             if classification.signal in _actionable:
-                process_email_signal(db, account.user_id, raw_email, classification)
+                if (
+                    classification.company
+                    and normalize_company_name(classification.company) in active_companies
+                ):
+                    process_email_signal(db, account.user_id, raw_email, classification)
+                else:
+                    _logger.info(
+                        "PARSE_ERROR retry: no active application match — skipping",
+                        extra={
+                            "gmail_message_id": raw_email.gmail_message_id,
+                            "email_account_id": account_id,
+                            "gemini_signal": classification.signal,
+                            "action_taken": "no_in_progress_match",
+                        },
+                    )
 
     except Exception as exc:
         _logger.error(

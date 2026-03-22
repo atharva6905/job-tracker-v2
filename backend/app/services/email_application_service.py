@@ -19,7 +19,6 @@ from sqlalchemy.orm import Session
 from app.models.application import Application, ApplicationStatus
 from app.models.company import Company
 from app.models.raw_email import RawEmail
-from app.services.company_service import find_or_create_company
 from app.services.gemini_service import GeminiClassificationResult
 from app.utils.company import normalize_company_name
 from app.utils.logging import get_logger
@@ -58,12 +57,21 @@ def process_email_signal(
     # STEP 1 — Find matching application
     application = _find_matching_application(db, user_id, normalized, signal)
 
-    # STEP 2 — Apply transition or create
+    # STEP 2 — Apply transition or no-op
     if application:
         _apply_transition(db, application, target_status, raw_email, user_id)
     else:
-        _create_application(
-            db, user_id, company_name, classification, raw_email, target_status
+        # No matching active application found — no-op.
+        # The poll worker's fine gate should have caught this already.
+        # This acts as a safety net for PARSE_ERROR retries.
+        _logger.info(
+            "No matching application found — no-op",
+            extra={
+                "gmail_message_id": raw_email.gmail_message_id,
+                "gemini_signal": signal,
+                "action_taken": "no_in_progress_match",
+                "user_id": str(user_id),
+            },
         )
 
 
@@ -207,45 +215,6 @@ def _apply_transition(
             "action_taken": "status_updated",
             "from": current.value,
             "to": target_status.value,
-            "application_id": str(application.id),
-            "user_id": str(user_id),
-        },
-    )
-
-
-def _create_application(
-    db: Session,
-    user_id: UUID,
-    company_name: str,
-    classification: GeminiClassificationResult,
-    raw_email: RawEmail,
-    target_status: ApplicationStatus,
-) -> None:
-    """Create a new application when no matching one exists."""
-    company = find_or_create_company(db, user_id, company_name)
-
-    application = Application(
-        user_id=user_id,
-        company_id=company.id,
-        role=classification.role or "Unknown",
-        status=target_status,
-        date_applied=(
-            raw_email.received_at.date()
-            if target_status == ApplicationStatus.APPLIED and raw_email.received_at
-            else None
-        ),
-    )
-    db.add(application)
-    db.flush()
-
-    raw_email.linked_application_id = application.id
-    db.commit()
-
-    _logger.info(
-        "Application created from email",
-        extra={
-            "action_taken": "application_created",
-            "status": target_status.value,
             "application_id": str(application.id),
             "user_id": str(user_id),
         },
