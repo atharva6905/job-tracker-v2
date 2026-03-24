@@ -5,7 +5,7 @@ from email.utils import parsedate_to_datetime
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -313,6 +313,29 @@ def poll_gmail_account(
                             "action_taken": "no_in_progress_match",
                         },
                     )
+
+        # Cleanup — purge orphaned PARSE_ERROR rows older than 30 days.
+        # These are emails Gemini permanently failed on and that were never
+        # linked to an application.  Keeping them forever bloats raw_emails.
+        cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+        deleted = db.execute(
+            delete(RawEmail).where(
+                RawEmail.email_account_id == account.id,
+                RawEmail.gemini_signal == "PARSE_ERROR",
+                RawEmail.linked_application_id.is_(None),
+                RawEmail.received_at < cutoff,
+            )
+        ).rowcount
+        db.commit()
+        if deleted:
+            _logger.info(
+                "Purged orphaned PARSE_ERROR emails",
+                extra={
+                    "email_account_id": account_id,
+                    "deleted_count": deleted,
+                    "action_taken": "parse_error_cleanup",
+                },
+            )
 
     except Exception as exc:
         _logger.error(

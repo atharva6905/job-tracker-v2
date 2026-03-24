@@ -1,6 +1,6 @@
 """Integration tests for the Gmail polling worker (chunk 10)."""
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 from sqlalchemy import func, select
@@ -585,3 +585,121 @@ class TestInProgressGate:
         # process_email_signal should NOT be called — company didn't match
         mock_process.assert_not_called()
         wrapped.close.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# PARSE_ERROR cleanup
+# ---------------------------------------------------------------------------
+
+class TestParseErrorCleanup:
+    """Orphaned PARSE_ERROR rows older than 30 days are purged at end of poll."""
+
+    def test_deletes_old_orphaned_parse_errors(self, db: Session, test_user: User):
+        account = _make_account(db, test_user)
+
+        old_date = datetime.now(timezone.utc) - timedelta(days=45)
+        recent_date = datetime.now(timezone.utc) - timedelta(days=5)
+
+        # Old orphan — should be deleted
+        old_orphan = RawEmail(
+            id=uuid.uuid4(),
+            email_account_id=account.id,
+            gmail_message_id="old_orphan_1",
+            subject="s",
+            sender="s@ats.com",
+            received_at=old_date,
+            body_snippet="",
+            gemini_signal="PARSE_ERROR",
+            linked_application_id=None,
+        )
+        # Recent orphan — should survive (< 30 days old)
+        recent_orphan = RawEmail(
+            id=uuid.uuid4(),
+            email_account_id=account.id,
+            gmail_message_id="recent_orphan_1",
+            subject="s",
+            sender="s@ats.com",
+            received_at=recent_date,
+            body_snippet="",
+            gemini_signal="PARSE_ERROR",
+            linked_application_id=None,
+        )
+        # Old but linked — should survive (has linked_application_id)
+        from app.models.application import Application, ApplicationStatus
+        from app.models.company import Company
+
+        company = Company(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            name="Acme",
+            normalized_name="acme",
+        )
+        db.add(company)
+        db.flush()
+        app = Application(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            company_id=company.id,
+            role="Engineer",
+            status=ApplicationStatus.IN_PROGRESS,
+        )
+        db.add(app)
+        db.flush()
+
+        old_linked = RawEmail(
+            id=uuid.uuid4(),
+            email_account_id=account.id,
+            gmail_message_id="old_linked_1",
+            subject="s",
+            sender="s@ats.com",
+            received_at=old_date,
+            body_snippet="",
+            gemini_signal="PARSE_ERROR",
+            linked_application_id=app.id,
+        )
+        # Old non-PARSE_ERROR — should survive (different signal)
+        old_applied = RawEmail(
+            id=uuid.uuid4(),
+            email_account_id=account.id,
+            gmail_message_id="old_applied_1",
+            subject="s",
+            sender="s@ats.com",
+            received_at=old_date,
+            body_snippet="",
+            gemini_signal="APPLIED",
+            gemini_confidence=0.95,
+            linked_application_id=None,
+        )
+
+        db.add_all([old_orphan, recent_orphan, old_linked, old_applied])
+        db.flush()
+
+        # Mock classify_email to keep PARSE_ERROR signal — so the retry loop
+        # doesn't change signals before cleanup runs.
+        still_broken = GeminiClassificationResult(
+            company=None, role=None, signal="PARSE_ERROR", confidence=0.0,
+        )
+
+        wrapped = MagicMock(wraps=db)
+        wrapped.close = MagicMock()
+
+        from app.jobs.poll_job import poll_gmail_account
+
+        with (
+            patch("app.jobs.poll_job.SessionLocal", return_value=wrapped),
+            patch("app.jobs.poll_job._load_active_company_names", return_value={"acme"}),
+            patch("app.jobs.poll_job.classify_email", return_value=still_broken),
+        ):
+            poll_gmail_account(str(account.id), gmail_client=MockGmailClient(messages=[]))
+
+        remaining_ids = set(
+            db.scalars(
+                select(RawEmail.gmail_message_id).where(
+                    RawEmail.email_account_id == account.id,
+                )
+            ).all()
+        )
+        assert "old_orphan_1" not in remaining_ids
+        assert "recent_orphan_1" in remaining_ids
+        assert "old_linked_1" in remaining_ids
+        assert "old_applied_1" in remaining_ids
