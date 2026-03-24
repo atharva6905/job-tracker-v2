@@ -54,7 +54,7 @@ function extractJobDescription() {
   // SECURITY: ONLY read from structural/display elements — NEVER from form fields.
   // Application forms can contain passwords, SSNs, EEO data, salary info.
   // We must not capture any of that.
-  const ALLOWED = "h1, h2, h3, p, li, section, article";
+  const ALLOWED = "h1, h2, h3, p, li";
   const FORBIDDEN = "input, textarea, select";
 
   const forbiddenSet = new Set(document.querySelectorAll(FORBIDDEN));
@@ -74,35 +74,42 @@ function extractJobDescription() {
 }
 
 function guessRoleFromPage() {
-  // Workday renders the job title in a dedicated automation-id element
   const wdHeader = document.querySelector('[data-automation-id="jobPostingHeader"]')?.textContent?.trim();
-  if (wdHeader) return wdHeader.substring(0, 255);
   const h1 = document.querySelector("h1")?.textContent?.trim() || "";
   const title = document.title || "";
+  console.log("[job-tracker-v2] guessRole selectors:", {
+    wdHeader: wdHeader || null,
+    h1: h1 || null,
+    documentTitle: title || null,
+  });
+  if (wdHeader) return wdHeader.substring(0, 255);
   return (h1 || title).substring(0, 255);
 }
 
 function guessCompanyFromPage() {
-  // Workday-specific DOM selectors for company name
-  const wdCompany = document.querySelector('[data-automation-id="jobPostingCompanyName"]')?.textContent?.trim()
-    || document.querySelector('[data-automation-id="organizationName"]')?.textContent?.trim();
+  const wdCompanyName = document.querySelector('[data-automation-id="jobPostingCompanyName"]')?.textContent?.trim();
+  const wdOrgName = document.querySelector('[data-automation-id="organizationName"]')?.textContent?.trim();
+  const pathMatch = window.location.pathname.match(/^\/[^/]+\/([^/]+)\/job\//);
+  const slug = pathMatch ? pathMatch[1].replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()) : null;
+  const titleParts = document.title.split(/[-–|]/);
+  const titleFallback = titleParts[titleParts.length - 1]?.trim() || "Unknown";
+  console.log("[job-tracker-v2] guessCompany selectors:", {
+    wdCompanyName: wdCompanyName || null,
+    wdOrgName: wdOrgName || null,
+    pathname: window.location.pathname,
+    slug: slug || null,
+    documentTitle: document.title,
+    titleFallback,
+  });
+
+  const wdCompany = wdCompanyName || wdOrgName;
   if (wdCompany) return wdCompany.substring(0, 255);
 
-  // URL-based: Workday paths follow /{locale}/{company_slug}/job/...
-  // e.g. /en-US/sdm_careers/job/... → "Sdm Careers"
-  const pathMatch = window.location.pathname.match(/^\/[^/]+\/([^/]+)\/job\//);
-  if (pathMatch) {
-    const slug = pathMatch[1]
-      .replace(/_/g, " ")
-      .replace(/\b\w/g, c => c.toUpperCase());
-    if (slug.toLowerCase() !== "careers" && slug.length > 1) {
-      return slug.substring(0, 255);
-    }
+  if (slug && slug.toLowerCase() !== "careers" && slug.length > 1) {
+    return slug.substring(0, 255);
   }
 
-  // Original fallback: split page title on common separators
-  const parts = document.title.split(/[-–|]/);
-  return (parts[parts.length - 1]?.trim() || "Unknown").substring(0, 255);
+  return titleFallback.substring(0, 255);
 }
 
 // ─── OVERLAY ──────────────────────────────────────────────────────────────────
