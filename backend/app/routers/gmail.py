@@ -178,16 +178,20 @@ def gmail_poll(
     if not account:
         raise HTTPException(status_code=404)
 
+    print("FORCE POLL ENDPOINT REACHED", flush=True)
+
     if force:
         account.last_polled_at = None
         db.commit()
         try:
+            print("CALLING MODIFY_JOB", flush=True)
             scheduler.modify_job(
                 f"poll_{account.id}",
                 next_run_time=datetime.now(timezone.utc),
             )
+            print("MODIFY_JOB SUCCEEDED", flush=True)
         except JobLookupError:
-            # Scheduler job not registered yet — fall back to direct call
+            print("CALLING DIRECT POLL (JobLookupError fallback)", flush=True)
             poll_gmail_account(str(account_id))
         return {"detail": "Re-sync started"}
 
