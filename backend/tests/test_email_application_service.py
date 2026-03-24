@@ -41,13 +41,14 @@ def _make_raw_email(
     *,
     gmail_message_id: str | None = None,
     received_at: datetime | None = None,
+    subject: str = "Test Subject",
     gemini_signal: str = "APPLIED",
     gemini_confidence: float = 0.95,
 ) -> RawEmail:
     raw_email = RawEmail(
         email_account_id=email_account.id,
         gmail_message_id=gmail_message_id or f"msg_{uuid.uuid4().hex[:12]}",
-        subject="Test Subject",
+        subject=subject,
         sender="noreply@company.com",
         received_at=received_at or datetime(2025, 6, 15, 10, 0, 0, tzinfo=timezone.utc),
         body_snippet="Thank you for applying...",
@@ -77,6 +78,7 @@ def _make_application(
     status: ApplicationStatus,
     *,
     source_url: str | None = None,
+    ats_job_id: str | None = None,
     role: str = "Software Engineer",
 ) -> Application:
     application = Application(
@@ -85,6 +87,7 @@ def _make_application(
         role=role,
         status=status,
         source_url=source_url,
+        ats_job_id=ats_job_id,
     )
     db.add(application)
     db.flush()
@@ -321,3 +324,94 @@ class TestProcessEmailSignal:
         )
         assert count == 0
         assert raw_email.linked_application_id is None
+
+    def test_ats_job_id_match_transitions_even_when_company_differs(
+        self, db, test_user, email_account
+    ):
+        """ATS job ID match takes priority over company name — transitions even when company differs."""
+        acme = _make_company(db, test_user.id, name="Acme Corp")
+        app_with_id = _make_application(
+            db, test_user.id, acme.id, ApplicationStatus.IN_PROGRESS,
+            ats_job_id="Cashier_R2000648316",
+            source_url="https://acme.wd5.myworkdayjobs.com/en-US/careers/job/Cashier_R2000648316",
+        )
+        # Different company — would NOT match via company name fallback
+        other_co = _make_company(db, test_user.id, name="Different Corp")
+        app_other = _make_application(
+            db, test_user.id, other_co.id, ApplicationStatus.IN_PROGRESS,
+        )
+
+        raw_email = _make_raw_email(
+            db, email_account, subject="Your application for R2000648316 has been received",
+        )
+
+        classification = GeminiClassificationResult(
+            company="Different Corp",
+            role="Cashier",
+            signal="APPLIED",
+            confidence=0.90,
+        )
+
+        process_email_signal(db, test_user.id, raw_email, classification)
+
+        db.refresh(app_with_id)
+        db.refresh(app_other)
+        assert app_with_id.status == ApplicationStatus.APPLIED
+        assert app_other.status == ApplicationStatus.IN_PROGRESS
+        assert raw_email.linked_application_id == app_with_id.id
+
+    def test_ats_job_id_falls_through_to_source_url_when_no_r_number(
+        self, db, test_user, email_account
+    ):
+        """No R-number in subject → falls through to source_url dedup."""
+        company = _make_company(db, test_user.id)
+        app = _make_application(
+            db, test_user.id, company.id, ApplicationStatus.IN_PROGRESS,
+            ats_job_id="Cashier_R2000648316",
+            source_url="https://acme.wd5.myworkdayjobs.com/en-US/careers/job/Cashier_R2000648316",
+        )
+
+        raw_email = _make_raw_email(
+            db, email_account, subject="Thanks for applying to Acme Corp!",
+        )
+
+        classification = GeminiClassificationResult(
+            company="Acme Corp",
+            role="Cashier",
+            signal="APPLIED",
+            confidence=0.90,
+        )
+
+        process_email_signal(db, test_user.id, raw_email, classification)
+
+        db.refresh(app)
+        assert app.status == ApplicationStatus.APPLIED
+        assert raw_email.linked_application_id == app.id
+
+    def test_ats_job_id_falls_through_to_company_when_no_match(
+        self, db, test_user, email_account
+    ):
+        """R-number in subject doesn't match any app → falls through to company name dedup."""
+        company = _make_company(db, test_user.id)
+        app = _make_application(
+            db, test_user.id, company.id, ApplicationStatus.IN_PROGRESS,
+            ats_job_id="Cashier_R1111111",
+            source_url="https://acme.wd5.myworkdayjobs.com/en-US/careers/job/Cashier_R1111111",
+        )
+
+        raw_email = _make_raw_email(
+            db, email_account, subject="Your application for R9999999 has been received",
+        )
+
+        classification = GeminiClassificationResult(
+            company="Acme Corp",
+            role="Engineer",
+            signal="APPLIED",
+            confidence=0.90,
+        )
+
+        process_email_signal(db, test_user.id, raw_email, classification)
+
+        db.refresh(app)
+        assert app.status == ApplicationStatus.APPLIED
+        assert raw_email.linked_application_id == app.id

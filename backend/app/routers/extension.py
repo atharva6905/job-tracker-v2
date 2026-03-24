@@ -39,6 +39,7 @@ def capture_application(
     if existing:
         existing.company_id = company.id
         existing.role = body.role
+        existing.ats_job_id = body.ats_job_id
         jd = db.scalar(
             select(JobDescription).where(JobDescription.application_id == existing.id)
         )
@@ -61,6 +62,7 @@ def capture_application(
         role=body.role,
         status=ApplicationStatus.IN_PROGRESS,
         source_url=body.source_url,
+        ats_job_id=body.ats_job_id,
     )
     db.add(application)
     db.flush()

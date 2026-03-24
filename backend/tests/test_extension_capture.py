@@ -197,6 +197,17 @@ def test_patch_cannot_set_in_progress(client, auth_headers):
 # ---------------------------------------------------------------------------
 
 
+def test_capture_stores_ats_job_id(client, auth_headers, db):
+    payload = {**VALID_PAYLOAD, "ats_job_id": "Cashier_R2000648316"}
+    resp = client.post("/extension/capture", json=payload, headers=auth_headers)
+    assert resp.status_code == 201
+
+    app = db.scalar(
+        select(Application).where(Application.id == uuid.UUID(resp.json()["application_id"]))
+    )
+    assert app.ats_job_id == "Cashier_R2000648316"
+
+
 def test_capture_rate_limit_at_61(client, auth_headers):
     payload = {
         "company_name": "Rate Test Co",

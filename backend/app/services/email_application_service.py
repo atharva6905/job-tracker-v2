@@ -11,6 +11,7 @@ gemini_confidence, action_taken, application_id, user_id, timestamps.
 =============================================================================
 """
 
+import re
 from uuid import UUID
 
 from sqlalchemy import select
@@ -24,6 +25,14 @@ from app.utils.company import normalize_company_name
 from app.utils.logging import get_logger
 
 _logger = get_logger("email_application_processor")
+
+_ATS_JOB_ID_RE = re.compile(r"\bR\d{7,}\b")
+
+
+def extract_ats_job_id(subject: str) -> str | None:
+    """Extract a Workday R-number (e.g. R2000648316) from an email subject."""
+    match = _ATS_JOB_ID_RE.search(subject)
+    return match.group(0) if match else None
 
 
 def process_email_signal(
@@ -56,7 +65,7 @@ def process_email_signal(
     target_status = ApplicationStatus(signal)
 
     # STEP 1 — Find matching application
-    application = _find_matching_application(db, user_id, normalized, signal)
+    application = _find_matching_application(db, user_id, normalized, signal, raw_email)
 
     # STEP 2 — Apply transition or no-op
     if application:
@@ -86,10 +95,26 @@ def _find_matching_application(
     user_id: UUID,
     normalized_company: str,
     signal: str,
+    raw_email: RawEmail,
 ) -> Application | None:
     """Find an existing application that matches the email classification."""
     if signal == "APPLIED":
-        # Primary: prefer IN_PROGRESS apps created by the extension (source_url set)
+        # Priority 0: match by ATS job ID (strongest signal — ignores company name)
+        r_number = extract_ats_job_id(raw_email.subject or "")
+        if r_number:
+            app = db.scalar(
+                select(Application).where(
+                    Application.user_id == user_id,
+                    Application.status == ApplicationStatus.IN_PROGRESS,
+                    Application.ats_job_id.isnot(None),
+                    Application.ats_job_id.contains(r_number),
+                )
+                .order_by(Application.created_at.desc())
+            )
+            if app:
+                return app
+
+        # Priority 1: prefer IN_PROGRESS apps created by the extension (source_url set)
         app = db.scalar(
             select(Application)
             .join(Company, Application.company_id == Company.id)

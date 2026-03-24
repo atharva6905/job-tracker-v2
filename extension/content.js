@@ -45,8 +45,8 @@ document.body.appendChild(marker);
 // Extract the job ID segment from a Workday URL path.
 // e.g. /en-US/sdm_careers/job/.../Cashier_R2000648316 → "Cashier_R2000648316"
 function extractJobId() {
-  const parts = window.location.pathname.split("/job/")[1]?.split("/") || [];
-  return parts[parts.length - 1] || null;
+  const match = window.location.pathname.match(/\/job\/([^/?#]+)/);
+  return match ? match[1] : null;
 }
 
 // ─── JD EXTRACTION ────────────────────────────────────────────────────────────
@@ -190,11 +190,13 @@ function maybeShowOverlay() {
     document.getElementById("jt-confirm").disabled = true;
     document.getElementById("jt-dismiss").disabled = true;
 
+    const jobId = extractJobId();
     const payload = {
       company_name: guessCompanyFromPage(),
       role: guessRoleFromPage(),
       job_description: extractJobDescription(),
-      source_url: window.location.href
+      source_url: window.location.href,
+      ...(jobId && { ats_job_id: jobId })
     };
 
     chrome.runtime.sendMessage({ type: "CAPTURE_APPLICATION", payload }, (response) => {

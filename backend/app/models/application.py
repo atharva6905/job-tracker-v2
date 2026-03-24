@@ -24,6 +24,7 @@ class Application(Base):
         Index("ix_applications_user_id_date_applied", "user_id", "date_applied"),
         Index("ix_applications_company_id", "company_id"),
         Index("ix_applications_user_id_source_url", "user_id", "source_url"),
+        Index("ix_applications_user_id_ats_job_id", "user_id", "ats_job_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -44,6 +45,7 @@ class Application(Base):
         Enum(ApplicationStatus, name="applicationstatus"), nullable=False
     )
     source_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    ats_job_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     date_applied: Mapped[date | None] = mapped_column(Date, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
