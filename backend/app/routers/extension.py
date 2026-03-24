@@ -37,6 +37,8 @@ def capture_application(
     )
 
     if existing:
+        existing.company_id = company.id
+        existing.role = body.role
         jd = db.scalar(
             select(JobDescription).where(JobDescription.application_id == existing.id)
         )
