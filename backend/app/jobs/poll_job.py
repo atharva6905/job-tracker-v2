@@ -78,7 +78,7 @@ def poll_gmail_account(
         try:
             access_token = decrypt_token(account.access_token)
             refresh_token = decrypt_token(account.refresh_token)
-        except ValueError as ve:
+        except ValueError:
             _logger.warning(
                 "Token decryption failed — skipping account",
                 exc_info=True,
