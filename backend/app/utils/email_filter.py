@@ -1,3 +1,7 @@
+from app.utils.logging import get_logger
+
+_logger = get_logger("email_pre_filter")
+
 KNOWN_ATS_DOMAINS = [
     "greenhouse.io",
     "lever.co",
@@ -37,16 +41,38 @@ JOB_SUBJECT_KEYWORDS = [
 ]
 
 
+def _extract_domain(sender: str) -> str:
+    """Extract the email domain from a sender string.
+
+    Handles both plain addresses (user@domain.com) and display-name
+    format (Display Name <user@domain.com>).
+    """
+    # Strip display name wrapper if present
+    if "<" in sender and ">" in sender:
+        sender = sender.split("<")[1].split(">")[0]
+    # Extract domain after @
+    _, _, domain = sender.rpartition("@")
+    return domain.lower()
+
+
 def is_job_related(sender: str, subject: str) -> bool:
     """Return True if the email is likely job-application related."""
-    sender_lower = sender.lower()
-    for domain in KNOWN_ATS_DOMAINS:
-        if domain in sender_lower:
+    domain = _extract_domain(sender)
+    for ats_domain in KNOWN_ATS_DOMAINS:
+        if ats_domain in domain:
+            _logger.debug(
+                "Pre-filter pass",
+                extra={"action_taken": "pre_filter_pass", "match_type": "ats_domain"},
+            )
             return True
 
     subject_lower = subject.lower()
     for keyword in JOB_SUBJECT_KEYWORDS:
         if keyword in subject_lower:
+            _logger.debug(
+                "Pre-filter pass",
+                extra={"action_taken": "pre_filter_pass", "match_type": "subject_keyword"},
+            )
             return True
 
     return False
