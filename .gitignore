@@ -13,6 +13,7 @@ frontend/.env.production
 # Planning / AI build docs — internal tooling, not for public repo
 # =============================================================================
 docs/
+CLAUDE.md
 
 # =============================================================================
 # Python
