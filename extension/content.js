@@ -14,9 +14,10 @@ function isWorkdayPage() {
   return meta?.content?.toLowerCase() === "workday";
 }
 
-if (!isWorkdayPage()) {
-  // Not a Workday page — bail out silently. No marker, no overlay, no scraping.
-  throw new Error("job-tracker-v2: not a Workday page, exiting content script");
+if (!isWorkdayPage() || /\/apply(\/|$)/.test(window.location.pathname)) {
+  // Not a Workday job posting page, or on an apply form page — exit immediately.
+  // No marker, no overlay, no scraping.
+  throw new Error("job-tracker-v2: not a Workday job posting page, exiting content script");
 }
 
 // ─── EXTENSION DETECTION MARKER ───────────────────────────────────────────────
@@ -29,22 +30,12 @@ marker.id = "job-tracker-v2-ext";
 marker.style.display = "none";
 document.body.appendChild(marker);
 
-// ─── WORKDAY JOB POSTING PAGE DETECTION ───────────────────────────────────────
+// ─── JOB ID EXTRACTION ───────────────────────────────────────────────────────
 // Extract the job ID segment from a Workday URL path.
 // e.g. /en-US/sdm_careers/job/.../Cashier_R2000648316 → "Cashier_R2000648316"
 function extractJobId() {
   const parts = window.location.pathname.split("/job/")[1]?.split("/") || [];
-  // Last segment before /apply/ (or the last segment if no /apply/)
-  const filtered = parts.filter(s => s && s !== "apply" && s !== "autofillWithResume");
-  return filtered[filtered.length - 1] || null;
-}
-
-function isJobApplicationPage() {
-  // Only match the job posting page (/job/{jobId}) — this is the page with the
-  // Apply button and visible JD. The multi-step apply form pages (/apply/ etc.)
-  // must NOT trigger the overlay.
-  const path = window.location.pathname;
-  return /\/job\//.test(path) && !/\/apply(\/|$)/.test(path);
+  return parts[parts.length - 1] || null;
 }
 
 // ─── JD EXTRACTION ────────────────────────────────────────────────────────────
@@ -98,7 +89,6 @@ function markShownForJob() {
 
 function maybeShowOverlay() {
   if (alreadyShownForJob()) return;
-  if (!isJobApplicationPage()) return;
   markShownForJob();
 
   const overlay = document.createElement("div");
@@ -182,26 +172,6 @@ function maybeShowOverlay() {
       }
     });
   };
-}
-
-// ─── SPA NAVIGATION CLEANUP ──────────────────────────────────────────────────
-// Content scripts run in Chrome's isolated world — monkey-patching history.pushState
-// does NOT intercept page-initiated pushState calls (they happen in the main world).
-// Poll the URL instead: cheap, reliable, works across all execution contexts.
-let lastPathname = window.location.pathname;
-setInterval(() => {
-  const current = window.location.pathname;
-  if (current === lastPathname) return;
-  lastPathname = current;
-  if (!isJobApplicationPage()) {
-    document.getElementById("jt-overlay")?.remove();
-  }
-}, 300);
-
-// On script init (reinjection after full navigation), clean up any stale overlay
-// left over from a previous page context.
-if (!isJobApplicationPage()) {
-  document.getElementById("jt-overlay")?.remove();
 }
 
 // Wait for DOM to settle before checking (1.5s covers lazy-rendered ATS pages)
