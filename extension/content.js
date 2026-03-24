@@ -34,7 +34,8 @@ function isJobApplicationPage() {
   // Only match the job posting page (/job/{jobId}) — this is the page with the
   // Apply button and visible JD. The multi-step apply form pages (/apply/ etc.)
   // must NOT trigger the overlay.
-  return /\/job\//.test(window.location.pathname);
+  const path = window.location.pathname;
+  return /\/job\//.test(path) && !/\/apply(\/|$)/.test(path);
 }
 
 // ─── JD EXTRACTION ────────────────────────────────────────────────────────────
