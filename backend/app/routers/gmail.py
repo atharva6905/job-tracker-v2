@@ -3,7 +3,7 @@ from typing import List
 
 import requests as http_requests
 from apscheduler.jobstores.base import JobLookupError
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from googleapiclient.discovery import build as google_build
 from sqlalchemy import select
@@ -155,6 +155,7 @@ def gmail_accounts(
 def gmail_poll(
     account_id: str,
     request: Request,
+    background_tasks: BackgroundTasks,
     force: bool = False,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -163,8 +164,9 @@ def gmail_poll(
     Trigger manual email poll for an account.
 
     When ``force=true``, resets ``last_polled_at`` to NULL so the worker
-    re-fetches the full 30-day window, then calls poll_gmail_account directly.
-    Already-stored emails are safely skipped by the dedup check.
+    re-fetches the full 30-day window.  The actual poll runs in a background
+    thread so the HTTP response returns immediately.  Already-stored emails
+    are safely skipped by the dedup check.
     """
     account = db.scalar(
         select(EmailAccount).where(
@@ -179,5 +181,5 @@ def gmail_poll(
         account.last_polled_at = None
         db.commit()
 
-    poll_gmail_account(str(account_id))
-    return {"detail": "Poll triggered"}
+    background_tasks.add_task(poll_gmail_account, str(account_id))
+    return {"detail": "Re-sync started"}
