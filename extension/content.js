@@ -149,30 +149,32 @@ function maybeShowOverlay() {
 
     chrome.runtime.sendMessage({ type: "CAPTURE_APPLICATION", payload }, (response) => {
       if (chrome.runtime.lastError) {
-        statusEl.textContent = "Extension error. Try reloading.";
+        statusEl.textContent = "Extension error.";
         statusEl.style.color = "#ef4444";
-        return;
-      }
-
-      if (response?.error === "token_expired") {
-        statusEl.textContent = "Session expired \u2014 please log in via the web app.";
+      } else if (response?.error === "token_expired") {
+        statusEl.textContent = "Session expired.";
         statusEl.style.color = "#f59e0b";
       } else if (response?.error === "not_authenticated") {
-        statusEl.textContent = "Log in to job-tracker-v2 first.";
+        statusEl.textContent = "Log in first.";
         statusEl.style.color = "#f59e0b";
       } else if (response?.success) {
         statusEl.textContent = "Saved \u2713";
         statusEl.style.color = "#10b981";
-        setTimeout(() => overlay.remove(), 2000);
       } else {
-        statusEl.textContent = `Error: ${response?.error || "unknown"}. Try again.`;
+        statusEl.textContent = `Error: ${response?.error || "unknown"}`;
         statusEl.style.color = "#ef4444";
-        document.getElementById("jt-confirm").disabled = false;
-        document.getElementById("jt-dismiss").disabled = false;
       }
+      // Always remove overlay after brief status flash — prevents DOM persistence
+      // across Workday SPA navigation (pushState doesn't reinject content scripts).
+      setTimeout(() => overlay.remove(), 1500);
     });
   };
 }
+
+// Clean up overlay on browser back/forward navigation.
+window.addEventListener("popstate", () => {
+  document.getElementById("jt-overlay")?.remove();
+});
 
 // Wait for DOM to settle before checking (1.5s covers lazy-rendered ATS pages)
 if (document.readyState === "complete" || document.readyState === "interactive") {
