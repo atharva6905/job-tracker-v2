@@ -69,6 +69,7 @@ def poll_gmail_account(
             select(EmailAccount).where(EmailAccount.id == uuid.UUID(account_id))
         )
         if not account:
+            print(f"POLL EXIT: account not found for {account_id}", flush=True)
             _logger.warning(
                 "EmailAccount not found",
                 extra={"email_account_id": account_id, "action_taken": "account_not_found"},
@@ -79,7 +80,8 @@ def poll_gmail_account(
         try:
             access_token = decrypt_token(account.access_token)
             refresh_token = decrypt_token(account.refresh_token)
-        except ValueError:
+        except ValueError as ve:
+            print(f"POLL EXIT: token decryption failed: {ve}", flush=True)
             _logger.warning(
                 "Token decryption failed — skipping account",
                 exc_info=True,
@@ -110,6 +112,7 @@ def poll_gmail_account(
                     account.token_expiry = credentials.expiry
                 db.commit()
             except Exception as exc:
+                print(f"POLL EXIT: token refresh failed: {type(exc).__name__}: {exc}", flush=True)
                 _logger.warning(
                     "Token refresh failed — skipping account",
                     exc_info=True,
@@ -121,6 +124,7 @@ def poll_gmail_account(
                 )
                 return
 
+        print(f"POLL PROGRESS: past token checks, building gmail client", flush=True)
         if gmail_client is None:
             gmail_client = RealGmailClient(credentials)
 
@@ -316,6 +320,7 @@ def poll_gmail_account(
                     )
 
     except Exception as exc:
+        print(f"POLL EXIT: unhandled exception: {type(exc).__name__}: {exc}", flush=True)
         _logger.error(
             "Poll job failed",
             exc_info=True,
