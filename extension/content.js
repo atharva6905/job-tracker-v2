@@ -185,27 +185,24 @@ function maybeShowOverlay() {
 }
 
 // ─── SPA NAVIGATION CLEANUP ──────────────────────────────────────────────────
-// Workday is an SPA — pushState changes the URL without a page reload, so the
-// overlay DOM persists. MutationObserver on body doesn't catch URL changes.
-// Intercept pushState/replaceState + listen for popstate to detect all navigations.
-function onUrlChange() {
+// Content scripts run in Chrome's isolated world — monkey-patching history.pushState
+// does NOT intercept page-initiated pushState calls (they happen in the main world).
+// Poll the URL instead: cheap, reliable, works across all execution contexts.
+let lastPathname = window.location.pathname;
+setInterval(() => {
+  const current = window.location.pathname;
+  if (current === lastPathname) return;
+  lastPathname = current;
   if (!isJobApplicationPage()) {
     document.getElementById("jt-overlay")?.remove();
   }
-}
+}, 300);
 
-// Monkey-patch History API — pushState/replaceState don't fire any event by default.
-for (const method of ["pushState", "replaceState"]) {
-  const original = history[method];
-  history[method] = function (...args) {
-    const result = original.apply(this, args);
-    onUrlChange();
-    return result;
-  };
+// On script init (reinjection after full navigation), clean up any stale overlay
+// left over from a previous page context.
+if (!isJobApplicationPage()) {
+  document.getElementById("jt-overlay")?.remove();
 }
-
-// popstate fires on back/forward navigation.
-window.addEventListener("popstate", onUrlChange);
 
 // Wait for DOM to settle before checking (1.5s covers lazy-rendered ATS pages)
 if (document.readyState === "complete" || document.readyState === "interactive") {
