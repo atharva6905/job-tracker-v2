@@ -415,3 +415,56 @@ class TestProcessEmailSignal:
         db.refresh(app)
         assert app.status == ApplicationStatus.APPLIED
         assert raw_email.linked_application_id == app.id
+
+    def test_null_company_with_r_number_matches_via_ats_job_id(
+        self, db, test_user, email_account
+    ):
+        """Gemini returns company=None but subject has R-number → still matches via ats_job_id."""
+        company = _make_company(db, test_user.id, name="Sdm Careers")
+        app = _make_application(
+            db, test_user.id, company.id, ApplicationStatus.IN_PROGRESS,
+            ats_job_id="Merchandiser_R2000639673",
+            source_url="https://sdm.wd5.myworkdayjobs.com/en-US/sdm_careers/job/Merchandiser_R2000639673",
+        )
+
+        raw_email = _make_raw_email(
+            db, email_account,
+            subject="Follow up on your application for R2000639673 Merchandiser (Open)",
+        )
+
+        classification = GeminiClassificationResult(
+            company=None,
+            role="Merchandiser",
+            signal="APPLIED",
+            confidence=0.90,
+        )
+
+        process_email_signal(db, test_user.id, raw_email, classification)
+
+        db.refresh(app)
+        assert app.status == ApplicationStatus.APPLIED
+        assert raw_email.linked_application_id == app.id
+
+    def test_null_company_without_r_number_is_no_op(
+        self, db, test_user, email_account
+    ):
+        """Gemini returns company=None and no R-number in subject → no-op (original behavior)."""
+        company = _make_company(db, test_user.id)
+        _make_application(
+            db, test_user.id, company.id, ApplicationStatus.IN_PROGRESS,
+        )
+
+        raw_email = _make_raw_email(
+            db, email_account, subject="Thanks for applying!",
+        )
+
+        classification = GeminiClassificationResult(
+            company=None,
+            role="Engineer",
+            signal="APPLIED",
+            confidence=0.90,
+        )
+
+        process_email_signal(db, test_user.id, raw_email, classification)
+
+        assert raw_email.linked_application_id is None

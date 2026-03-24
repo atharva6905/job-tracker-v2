@@ -332,10 +332,24 @@ def poll_gmail_account(
             # active_companies was loaded at poll start — intentionally stale (snapshot).
             # Do not re-query here; the set is correct for this poll cycle.
             if classification.signal in ACTIONABLE_SIGNALS:
-                if (
+                company_matches = (
                     classification.company
                     and normalize_company_name(classification.company) in active_companies
-                ):
+                )
+                # Bypass: allow through if subject has an R-number matching an active app
+                ats_matches = False
+                if not company_matches:
+                    retry_r_number = extract_ats_job_id(raw_email.subject or "")
+                    if retry_r_number:
+                        ats_matches = bool(db.scalar(
+                            select(Application.id).where(
+                                Application.user_id == account.user_id,
+                                Application.status == ApplicationStatus.IN_PROGRESS,
+                                Application.ats_job_id.isnot(None),
+                                Application.ats_job_id.contains(retry_r_number),
+                            )
+                        ))
+                if company_matches or ats_matches:
                     process_email_signal(db, account.user_id, raw_email, classification)
                 else:
                     _logger.info(

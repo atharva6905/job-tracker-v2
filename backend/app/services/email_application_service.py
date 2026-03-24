@@ -50,18 +50,21 @@ def process_email_signal(
     company_name = classification.company
 
     if not company_name or not company_name.strip():
-        _logger.warning(
-            "No company extracted — skipping",
-            extra={
-                "gmail_message_id": raw_email.gmail_message_id,
-                "gemini_signal": signal,
-                "action_taken": "no_op_null_company",
-                "user_id": str(user_id),
-            },
-        )
-        return
+        # No company extracted — but if the subject contains an R-number,
+        # the ats_job_id lookup can still match without a company name.
+        if not extract_ats_job_id(raw_email.subject or ""):
+            _logger.warning(
+                "No company extracted — skipping",
+                extra={
+                    "gmail_message_id": raw_email.gmail_message_id,
+                    "gemini_signal": signal,
+                    "action_taken": "no_op_null_company",
+                    "user_id": str(user_id),
+                },
+            )
+            return
 
-    normalized = normalize_company_name(company_name)
+    normalized = normalize_company_name(company_name) if company_name else ""
     target_status = ApplicationStatus(signal)
 
     # STEP 1 — Find matching application
