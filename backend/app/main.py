@@ -2,6 +2,7 @@ import os
 from contextlib import asynccontextmanager
 
 import sentry_sdk
+from apscheduler.events import EVENT_JOB_ERROR, JobExecutionEvent
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exception_handlers import http_exception_handler
@@ -32,6 +33,28 @@ if _sentry_dsn:
 _logger = get_logger("api")
 
 
+def _scheduler_job_error_listener(event: JobExecutionEvent) -> None:
+    """APScheduler hook — fires when a job raises an unhandled exception.
+
+    poll_gmail_account() already catches everything internally, so this listener
+    only fires when an exception escapes the job function entirely (e.g., an
+    error before the try block, or a bug in the exception handler itself).
+    Logs to stdout so the error is visible regardless of APScheduler's own
+    logger propagation behaviour.
+    """
+    exc = event.exception
+    _logger.error(
+        "APScheduler job raised an unhandled exception",
+        extra={
+            "job_id": event.job_id,
+            "scheduled_run_time": str(event.scheduled_run_time),
+            "action_taken": "scheduler_job_error",
+            "error_type": type(exc).__name__ if exc else "unknown",
+        },
+        exc_info=(type(exc), exc, event.traceback) if exc else False,
+    )
+
+
 class ContentSizeLimitMiddleware(BaseHTTPMiddleware):
     """Reject requests whose Content-Length exceeds max_size bytes."""
 
@@ -50,6 +73,7 @@ class ContentSizeLimitMiddleware(BaseHTTPMiddleware):
 async def lifespan(app: FastAPI):
     # --- Startup ---
     scheduler.start()
+    scheduler.add_listener(_scheduler_job_error_listener, EVENT_JOB_ERROR)
 
     db = SessionLocal()
     try:
