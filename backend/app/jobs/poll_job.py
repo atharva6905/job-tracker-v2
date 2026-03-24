@@ -15,7 +15,7 @@ from app.models.company import Company
 from app.models.email_account import EmailAccount
 from app.models.raw_email import RawEmail
 from app.utils.company import normalize_company_name
-from app.services.email_application_service import process_email_signal
+from app.services.email_application_service import extract_ats_job_id, process_email_signal
 from app.services.gemini_service import classify_email, ACTIONABLE_SIGNALS
 from app.utils.email_filter import is_job_related
 from app.utils.encryption import decrypt_token, encrypt_token
@@ -206,16 +206,50 @@ def poll_gmail_account(
                         or normalize_company_name(classification.company) not in active_companies
                     )
                 ):
-                    _logger.info(
-                        "Email company has no active application — skipping",
-                        extra={
-                            "gmail_message_id": message_id,
-                            "email_account_id": account_id,
-                            "gemini_signal": classification.signal,
-                            "action_taken": "no_in_progress_match",
-                        },
-                    )
-                    continue
+                    # Bypass: allow through if subject contains an R-number
+                    # matching an active application's ats_job_id
+                    r_number = extract_ats_job_id(subject)
+                    if r_number:
+                        has_ats_match = db.scalar(
+                            select(Application.id).where(
+                                Application.user_id == account.user_id,
+                                Application.status == ApplicationStatus.IN_PROGRESS,
+                                Application.ats_job_id.isnot(None),
+                                Application.ats_job_id.contains(r_number),
+                            )
+                        )
+                        if has_ats_match:
+                            _logger.info(
+                                "Fine gate bypassed via ats_job_id match",
+                                extra={
+                                    "gmail_message_id": message_id,
+                                    "email_account_id": account_id,
+                                    "gemini_signal": classification.signal,
+                                    "action_taken": "fine_gate_ats_bypass",
+                                },
+                            )
+                        else:
+                            _logger.info(
+                                "Email company has no active application — skipping",
+                                extra={
+                                    "gmail_message_id": message_id,
+                                    "email_account_id": account_id,
+                                    "gemini_signal": classification.signal,
+                                    "action_taken": "no_in_progress_match",
+                                },
+                            )
+                            continue
+                    else:
+                        _logger.info(
+                            "Email company has no active application — skipping",
+                            extra={
+                                "gmail_message_id": message_id,
+                                "email_account_id": account_id,
+                                "gemini_signal": classification.signal,
+                                "action_taken": "no_in_progress_match",
+                            },
+                        )
+                        continue
 
                 raw_email = RawEmail(
                     email_account_id=account.id,
