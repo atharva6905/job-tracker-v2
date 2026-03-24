@@ -59,12 +59,26 @@ function extractJobDescription() {
 
   const forbiddenSet = new Set(document.querySelectorAll(FORBIDDEN));
 
-  return [...document.querySelectorAll(ALLOWED)]
+  const allMatched = [...document.querySelectorAll(ALLOWED)]
     .filter(el => {
       // Exclude if the element itself is forbidden
       if (forbiddenSet.has(el)) return false;
       // Exclude if any ancestor is a form field container
       if (el.closest(FORBIDDEN)) return false;
+      return true;
+    });
+
+  const matchedSet = new Set(allMatched);
+
+  return allMatched
+    .filter(el => {
+      // Exclude elements nested inside another matched element (e.g. <p> inside <li>)
+      // to prevent textContent duplication — parent already includes child text.
+      let parent = el.parentElement;
+      while (parent) {
+        if (matchedSet.has(parent)) return false;
+        parent = parent.parentElement;
+      }
       return true;
     })
     .map(el => el.textContent.trim())
