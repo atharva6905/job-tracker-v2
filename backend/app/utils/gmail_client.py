@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from googleapiclient.discovery import build
 
@@ -20,7 +20,12 @@ class RealGmailClient(GmailClientInterface):
     def get_messages_since(
         self, account_id: str, since_timestamp: datetime, page_token=None
     ) -> dict:
-        unix_ts = int(since_timestamp.timestamp())
+        # Gmail API ``after:`` truncates epoch seconds to day-level precision
+        # and is exclusive (``after:March_23`` = March 24 onwards).  Subtract
+        # one day so same-day emails are never missed.  The caller's
+        # gmail_message_id dedup check safely handles any re-fetched overlap.
+        adjusted = since_timestamp - timedelta(days=1)
+        unix_ts = int(adjusted.timestamp())
         kwargs: dict = {"userId": "me", "q": f"after:{unix_ts}"}
         if page_token:
             kwargs["pageToken"] = page_token

@@ -166,7 +166,6 @@ def gmail_poll(
     re-fetches the full 30-day window, then calls poll_gmail_account directly.
     Already-stored emails are safely skipped by the dedup check.
     """
-    print(f"FORCE POLL PATH: force={force}", flush=True)
     account = db.scalar(
         select(EmailAccount).where(
             EmailAccount.id == account_id,
