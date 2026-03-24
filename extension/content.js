@@ -29,24 +29,12 @@ marker.id = "job-tracker-v2-ext";
 marker.style.display = "none";
 document.body.appendChild(marker);
 
-// ─── WORKDAY APPLICATION PAGE DETECTION ───────────────────────────────────────
-// Look for these keywords in label text or input placeholders
-const FORM_FIELD_KEYWORDS = [
-  "first name", "last name", "resume", "cover letter",
-  "phone", "linkedin", "work authorization"
-];
-
+// ─── WORKDAY JOB POSTING PAGE DETECTION ───────────────────────────────────────
 function isJobApplicationPage() {
-  // Workday job posting page — URL contains /job/ (the page with Apply button + JD)
-  if (/\/job\//.test(window.location.pathname)) return true;
-
-  // Workday apply form — fallback heuristic for /apply/ pages
-  const labels = document.querySelectorAll("label");
-  const allText = [...labels]
-    .map(el => (el.textContent || "").toLowerCase())
-    .join(" ");
-  const matchCount = FORM_FIELD_KEYWORDS.filter(k => allText.includes(k)).length;
-  return matchCount >= 2;
+  // Only match the job posting page (/job/{jobId}) — this is the page with the
+  // Apply button and visible JD. The multi-step apply form pages (/apply/ etc.)
+  // must NOT trigger the overlay.
+  return /\/job\//.test(window.location.pathname);
 }
 
 // ─── JD EXTRACTION ────────────────────────────────────────────────────────────
