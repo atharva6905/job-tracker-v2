@@ -51,8 +51,7 @@ def _configure_root_logger() -> None:
 
     root = logging.getLogger()
     root.addHandler(handler)
-    if root.level == logging.NOTSET:
-        root.setLevel(logging.INFO)
+    root.setLevel(logging.INFO)
 
     _configured = True
 
