@@ -74,15 +74,33 @@ function extractJobDescription() {
 }
 
 function guessRoleFromPage() {
+  // Workday renders the job title in a dedicated automation-id element
+  const wdHeader = document.querySelector('[data-automation-id="jobPostingHeader"]')?.textContent?.trim();
+  if (wdHeader) return wdHeader.substring(0, 255);
   const h1 = document.querySelector("h1")?.textContent?.trim() || "";
   const title = document.title || "";
-  // Prefer h1 (usually the job title on ATS pages); fall back to page title
   return (h1 || title).substring(0, 255);
 }
 
 function guessCompanyFromPage() {
-  // Best-effort: split page title on common separators
-  // e.g. "Software Engineer - Google Careers" → "Google Careers"
+  // Workday-specific DOM selectors for company name
+  const wdCompany = document.querySelector('[data-automation-id="jobPostingCompanyName"]')?.textContent?.trim()
+    || document.querySelector('[data-automation-id="organizationName"]')?.textContent?.trim();
+  if (wdCompany) return wdCompany.substring(0, 255);
+
+  // URL-based: Workday paths follow /{locale}/{company_slug}/job/...
+  // e.g. /en-US/sdm_careers/job/... → "Sdm Careers"
+  const pathMatch = window.location.pathname.match(/^\/[^/]+\/([^/]+)\/job\//);
+  if (pathMatch) {
+    const slug = pathMatch[1]
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, c => c.toUpperCase());
+    if (slug.toLowerCase() !== "careers" && slug.length > 1) {
+      return slug.substring(0, 255);
+    }
+  }
+
+  // Original fallback: split page title on common separators
   const parts = document.title.split(/[-–|]/);
   return (parts[parts.length - 1]?.trim() || "Unknown").substring(0, 255);
 }
