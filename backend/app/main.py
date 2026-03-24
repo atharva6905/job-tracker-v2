@@ -78,6 +78,7 @@ async def lifespan(app: FastAPI):
     db = SessionLocal()
     try:
         accounts = db.scalars(select(EmailAccount)).all()
+        registered = 0
         for account in accounts:
             scheduler.add_job(
                 poll_gmail_account,
@@ -88,6 +89,17 @@ async def lifespan(app: FastAPI):
                 max_instances=1,
                 replace_existing=True,
             )
+            registered += 1
+        _logger.info(
+            "Startup poll jobs registered",
+            extra={"account_count": registered, "action_taken": "startup_job_registration"},
+        )
+    except Exception:
+        _logger.error(
+            "Failed to register poll jobs on startup — scheduler will have no poll jobs",
+            exc_info=True,
+            extra={"action_taken": "startup_job_registration_failed"},
+        )
     finally:
         db.close()
 
