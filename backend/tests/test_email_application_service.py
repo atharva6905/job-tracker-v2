@@ -79,6 +79,7 @@ def _make_application(
     *,
     source_url: str | None = None,
     ats_job_id: str | None = None,
+    workday_tenant: str | None = None,
     role: str = "Software Engineer",
 ) -> Application:
     application = Application(
@@ -88,6 +89,7 @@ def _make_application(
         status=status,
         source_url=source_url,
         ats_job_id=ats_job_id,
+        workday_tenant=workday_tenant,
     )
     db.add(application)
     db.flush()
@@ -463,6 +465,264 @@ class TestProcessEmailSignal:
             role="Engineer",
             signal="APPLIED",
             confidence=0.90,
+        )
+
+        process_email_signal(db, test_user.id, raw_email, classification)
+
+        assert raw_email.linked_application_id is None
+
+
+class TestWorkdayTenantMatching:
+    """Tests for Priority 1: Workday tenant deduplication."""
+
+    def test_tenant_match_transitions_app(self, db, test_user, email_account):
+        """Sender tenant matches application workday_tenant even when company names differ."""
+        company = _make_company(db, test_user.id, "Meredith")
+        app = _make_application(
+            db, test_user.id, company.id, ApplicationStatus.IN_PROGRESS,
+            workday_tenant="meredith",
+        )
+
+        # Sender is meredith@myworkday.com, but Gemini extracts "People Inc."
+        raw_email = _make_raw_email(db, email_account)
+        # Override sender to Workday tenant address
+        raw_email.sender = "meredith@myworkday.com"
+        db.flush()
+
+        classification = GeminiClassificationResult(
+            company="People Inc.",
+            role="Software Engineer",
+            signal="APPLIED",
+            confidence=0.95,
+        )
+
+        process_email_signal(db, test_user.id, raw_email, classification)
+
+        db.refresh(app)
+        assert app.status == ApplicationStatus.APPLIED
+        assert raw_email.linked_application_id == app.id
+
+    def test_shared_sender_falls_through(self, db, test_user, email_account):
+        """Shared sender (noreply@myworkday.com) does not match via tenant — falls through."""
+        company = _make_company(db, test_user.id, "Acme Corp")
+        app = _make_application(
+            db, test_user.id, company.id, ApplicationStatus.IN_PROGRESS,
+            workday_tenant="acme",
+        )
+
+        raw_email = _make_raw_email(db, email_account)
+        raw_email.sender = "noreply@myworkday.com"
+        db.flush()
+
+        # Company name matches so Priority 3 (company name) should catch it
+        classification = GeminiClassificationResult(
+            company="Acme Corp",
+            role="Engineer",
+            signal="APPLIED",
+            confidence=0.95,
+        )
+
+        process_email_signal(db, test_user.id, raw_email, classification)
+
+        db.refresh(app)
+        assert app.status == ApplicationStatus.APPLIED
+
+    def test_two_apps_same_tenant_falls_through(self, db, test_user, email_account):
+        """Two apps with same tenant — tenant match is ambiguous, falls through."""
+        company = _make_company(db, test_user.id, "Meredith")
+        app1 = _make_application(
+            db, test_user.id, company.id, ApplicationStatus.IN_PROGRESS,
+            workday_tenant="meredith", role="Software Engineer",
+        )
+        app2 = _make_application(
+            db, test_user.id, company.id, ApplicationStatus.IN_PROGRESS,
+            workday_tenant="meredith", role="Data Analyst",
+        )
+
+        raw_email = _make_raw_email(db, email_account)
+        raw_email.sender = "meredith@myworkday.com"
+        db.flush()
+
+        # Company is different so Priority 3 won't match either
+        classification = GeminiClassificationResult(
+            company="People Inc.",
+            role="Data Analyst",
+            signal="APPLIED",
+            confidence=0.95,
+        )
+
+        process_email_signal(db, test_user.id, raw_email, classification)
+
+        # Neither app should have transitioned (ambiguous tenant, no company match)
+        # But Jaccard might match app2 — "Data Analyst" == "Data Analyst" => Jaccard 1.0
+        # and only app2 matches, so it should transition
+        db.refresh(app1)
+        db.refresh(app2)
+        assert app1.status == ApplicationStatus.IN_PROGRESS
+        assert app2.status == ApplicationStatus.APPLIED
+
+    def test_tenant_match_for_interview_signal(self, db, test_user, email_account):
+        """Tenant matching works for non-APPLIED signals (INTERVIEW)."""
+        company = _make_company(db, test_user.id, "Meredith")
+        app = _make_application(
+            db, test_user.id, company.id, ApplicationStatus.APPLIED,
+            workday_tenant="meredith",
+        )
+
+        raw_email = _make_raw_email(
+            db, email_account, gemini_signal="INTERVIEW",
+        )
+        raw_email.sender = "meredith@myworkday.com"
+        db.flush()
+
+        classification = GeminiClassificationResult(
+            company="People Inc.",
+            role="Software Engineer",
+            signal="INTERVIEW",
+            confidence=0.90,
+        )
+
+        process_email_signal(db, test_user.id, raw_email, classification)
+
+        db.refresh(app)
+        assert app.status == ApplicationStatus.INTERVIEW
+
+
+class TestJaccardSimilarity:
+    """Tests for Priority 4: role token Jaccard similarity fallback."""
+
+    def test_jaccard_matches_similar_roles(self, db, test_user, email_account):
+        """Jaccard >= 0.7 on role tokens matches the right application."""
+        company = _make_company(db, test_user.id, "Unknown Corp")
+        app = _make_application(
+            db, test_user.id, company.id, ApplicationStatus.IN_PROGRESS,
+            role="Software Engineer Intern",
+        )
+
+        raw_email = _make_raw_email(db, email_account)
+        raw_email.sender = "careers@example.com"
+        db.flush()
+
+        # "Software Engineer Intern" tokens: {software, engineer, intern}
+        # "Software Engineering Intern" tokens: {software, engineering, intern}
+        # Jaccard = 2/4 = 0.5 — too low!
+        # Use a role that actually gives >= 0.7
+        # "Software Engineer Intern" vs "Software Engineer Intern 2026"
+        # tokens: {software, engineer, intern} vs {software, engineer, intern, 2026}
+        # Jaccard = 3/4 = 0.75 >= 0.7 ✓
+        classification = GeminiClassificationResult(
+            company="Nonexistent Co",
+            role="Software Engineer Intern 2026",
+            signal="APPLIED",
+            confidence=0.95,
+        )
+
+        process_email_signal(db, test_user.id, raw_email, classification)
+
+        db.refresh(app)
+        assert app.status == ApplicationStatus.APPLIED
+
+    def test_jaccard_below_threshold_no_match(self, db, test_user, email_account):
+        """Jaccard < 0.7 — no match, no-op."""
+        company = _make_company(db, test_user.id, "Unknown Corp")
+        _make_application(
+            db, test_user.id, company.id, ApplicationStatus.IN_PROGRESS,
+            role="Data Scientist",
+        )
+
+        raw_email = _make_raw_email(db, email_account)
+        raw_email.sender = "careers@example.com"
+        db.flush()
+
+        classification = GeminiClassificationResult(
+            company="Nonexistent Co",
+            role="Software Engineer",
+            signal="APPLIED",
+            confidence=0.95,
+        )
+
+        process_email_signal(db, test_user.id, raw_email, classification)
+
+        assert raw_email.linked_application_id is None
+
+    def test_jaccard_multiple_matches_no_op(self, db, test_user, email_account):
+        """Multiple apps matching via Jaccard — ambiguous, no-op."""
+        company = _make_company(db, test_user.id, "Unknown Corp")
+        app1 = _make_application(
+            db, test_user.id, company.id, ApplicationStatus.IN_PROGRESS,
+            role="Software Engineer",
+        )
+        app2 = _make_application(
+            db, test_user.id, company.id, ApplicationStatus.IN_PROGRESS,
+            role="Software Engineer",
+        )
+
+        raw_email = _make_raw_email(db, email_account)
+        raw_email.sender = "careers@example.com"
+        db.flush()
+
+        classification = GeminiClassificationResult(
+            company="Nonexistent Co",
+            role="Software Engineer",
+            signal="APPLIED",
+            confidence=0.95,
+        )
+
+        process_email_signal(db, test_user.id, raw_email, classification)
+
+        db.refresh(app1)
+        db.refresh(app2)
+        assert app1.status == ApplicationStatus.IN_PROGRESS
+        assert app2.status == ApplicationStatus.IN_PROGRESS
+        assert raw_email.linked_application_id is None
+
+    def test_jaccard_excludes_old_apps(self, db, test_user, email_account):
+        """Apps older than 14 days are excluded from Jaccard matching."""
+        from datetime import timedelta, timezone
+
+        company = _make_company(db, test_user.id, "Unknown Corp")
+        app = _make_application(
+            db, test_user.id, company.id, ApplicationStatus.IN_PROGRESS,
+            role="Software Engineer",
+        )
+        # Manually backdate the application
+        app.created_at = datetime(2025, 1, 1, tzinfo=timezone.utc)
+        db.flush()
+
+        raw_email = _make_raw_email(db, email_account)
+        raw_email.sender = "careers@example.com"
+        db.flush()
+
+        classification = GeminiClassificationResult(
+            company="Nonexistent Co",
+            role="Software Engineer",
+            signal="APPLIED",
+            confidence=0.95,
+        )
+
+        process_email_signal(db, test_user.id, raw_email, classification)
+
+        db.refresh(app)
+        assert app.status == ApplicationStatus.IN_PROGRESS
+        assert raw_email.linked_application_id is None
+
+    def test_jaccard_null_role_no_match(self, db, test_user, email_account):
+        """When classification.role is None, Jaccard doesn't fire."""
+        company = _make_company(db, test_user.id, "Unknown Corp")
+        _make_application(
+            db, test_user.id, company.id, ApplicationStatus.IN_PROGRESS,
+            role="Software Engineer",
+        )
+
+        raw_email = _make_raw_email(db, email_account)
+        raw_email.sender = "careers@example.com"
+        db.flush()
+
+        classification = GeminiClassificationResult(
+            company="Nonexistent Co",
+            role=None,
+            signal="APPLIED",
+            confidence=0.95,
         )
 
         process_email_signal(db, test_user.id, raw_email, classification)

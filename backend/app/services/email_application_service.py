@@ -12,6 +12,7 @@ gemini_confidence, action_taken, application_id, user_id, timestamps.
 """
 
 import re
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from sqlalchemy import select
@@ -23,6 +24,7 @@ from app.models.raw_email import RawEmail
 from app.services.gemini_service import GeminiClassificationResult
 from app.utils.company import normalize_company_name
 from app.utils.logging import get_logger
+from app.utils.workday import extract_tenant_from_sender
 
 _logger = get_logger("email_application_processor")
 
@@ -68,7 +70,10 @@ def process_email_signal(
     target_status = ApplicationStatus(signal)
 
     # STEP 1 — Find matching application
-    application = _find_matching_application(db, user_id, normalized, signal, raw_email)
+    application = _find_matching_application(
+        db, user_id, normalized, signal, raw_email,
+        classification_role=classification.role,
+    )
 
     # STEP 2 — Apply transition or no-op
     if application:
@@ -93,14 +98,32 @@ def process_email_signal(
 # ---------------------------------------------------------------------------
 
 
+def _jaccard_similarity(a: set[str], b: set[str]) -> float:
+    """Jaccard similarity between two token sets."""
+    union = a | b
+    if not union:
+        return 0.0
+    return len(a & b) / len(union)
+
+
 def _find_matching_application(
     db: Session,
     user_id: UUID,
     normalized_company: str,
     signal: str,
     raw_email: RawEmail,
+    *,
+    classification_role: str | None = None,
 ) -> Application | None:
-    """Find an existing application that matches the email classification."""
+    """Find an existing application that matches the email classification.
+
+    Priority chain:
+      0 — ATS job ID (R-number in subject)
+      1 — Workday tenant (sender email → application.workday_tenant)
+      2 — source_url + normalized company (extension-created apps)
+      3 — normalized company name only
+      4 — Role token Jaccard similarity (>= 0.7, last 14 days, exactly 1 match)
+    """
     if signal == "APPLIED":
         # Priority 0: match by ATS job ID (strongest signal — ignores company name)
         r_number = extract_ats_job_id(raw_email.subject or "")
@@ -117,7 +140,22 @@ def _find_matching_application(
             if app:
                 return app
 
-        # Priority 1: prefer IN_PROGRESS apps created by the extension (source_url set)
+        # Priority 1: Workday tenant match
+        sender_tenant = extract_tenant_from_sender(raw_email.sender)
+        if sender_tenant:
+            tenant_apps = db.scalars(
+                select(Application).where(
+                    Application.user_id == user_id,
+                    Application.status == ApplicationStatus.IN_PROGRESS,
+                    Application.workday_tenant == sender_tenant,
+                )
+                .order_by(Application.created_at.desc())
+            ).all()
+            if len(tenant_apps) == 1:
+                return tenant_apps[0]
+            # Multiple matches: fall through — don't guess
+
+        # Priority 2: prefer IN_PROGRESS apps created by the extension (source_url set)
         app = db.scalar(
             select(Application)
             .join(Company, Application.company_id == Company.id)
@@ -132,8 +170,8 @@ def _find_matching_application(
         if app:
             return app
 
-        # Fallback: any IN_PROGRESS app by normalized company name
-        return db.scalar(
+        # Priority 3: any IN_PROGRESS app by normalized company name
+        app = db.scalar(
             select(Application)
             .join(Company, Application.company_id == Company.id)
             .where(
@@ -143,8 +181,33 @@ def _find_matching_application(
             )
             .order_by(Application.created_at.desc())
         )
+        if app:
+            return app
+
+        # Priority 4: role token Jaccard similarity (last resort)
+        return _jaccard_fallback(
+            db, user_id, classification_role,
+            [ApplicationStatus.IN_PROGRESS],
+        )
 
     # For INTERVIEW / OFFER / REJECTED: prefer transitional apps (APPLIED, INTERVIEW)
+
+    # Priority 1: Workday tenant match (transitional states)
+    sender_tenant = extract_tenant_from_sender(raw_email.sender)
+    if sender_tenant:
+        tenant_apps = db.scalars(
+            select(Application).where(
+                Application.user_id == user_id,
+                Application.status.in_(
+                    [ApplicationStatus.APPLIED, ApplicationStatus.INTERVIEW]
+                ),
+                Application.workday_tenant == sender_tenant,
+            )
+            .order_by(Application.created_at.desc())
+        ).all()
+        if len(tenant_apps) == 1:
+            return tenant_apps[0]
+
     app = db.scalar(
         select(Application)
         .join(Company, Application.company_id == Company.id)
@@ -161,7 +224,7 @@ def _find_matching_application(
         return app
 
     # Fallback: match terminal-state apps so _apply_transition can log no-op
-    return db.scalar(
+    app = db.scalar(
         select(Application)
         .join(Company, Application.company_id == Company.id)
         .where(
@@ -173,6 +236,46 @@ def _find_matching_application(
         )
         .order_by(Application.created_at.desc())
     )
+    if app:
+        return app
+
+    # Priority 4: role token Jaccard similarity (last resort)
+    return _jaccard_fallback(
+        db, user_id, classification_role,
+        [ApplicationStatus.APPLIED, ApplicationStatus.INTERVIEW],
+    )
+
+
+def _jaccard_fallback(
+    db: Session,
+    user_id: UUID,
+    classification_role: str | None,
+    statuses: list[ApplicationStatus],
+) -> Application | None:
+    """Last-resort matching by role token Jaccard similarity.
+
+    Only fires when all higher priorities fail. Requires exactly one match
+    with Jaccard >= 0.7 among apps created in the last 14 days.
+    Multiple matches = no-op (ambiguous).
+    """
+    if not classification_role:
+        return None
+    cutoff = datetime.now(timezone.utc) - timedelta(days=14)
+    recent_apps = db.scalars(
+        select(Application).where(
+            Application.user_id == user_id,
+            Application.status.in_(statuses),
+            Application.created_at >= cutoff,
+        )
+    ).all()
+    role_tokens = set(classification_role.lower().split())
+    matches = [
+        app for app in recent_apps
+        if _jaccard_similarity(role_tokens, set(app.role.lower().split())) >= 0.7
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    return None
 
 
 _VALID_TRANSITIONS = {

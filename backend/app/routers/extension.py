@@ -12,6 +12,7 @@ from app.models.job_description import JobDescription
 from app.models.user import User
 from app.schemas.extension import ExtensionCaptureRequest, ExtensionCaptureResponse
 from app.services.company_service import find_or_create_company
+from app.utils.workday import extract_workday_tenant
 
 router = APIRouter(prefix="/extension", tags=["extension"])
 
@@ -40,6 +41,7 @@ def capture_application(
         existing.company_id = company.id
         existing.role = body.role
         existing.ats_job_id = body.ats_job_id
+        existing.workday_tenant = extract_workday_tenant(body.source_url)
         jd = db.scalar(
             select(JobDescription).where(JobDescription.application_id == existing.id)
         )
@@ -63,6 +65,7 @@ def capture_application(
         status=ApplicationStatus.IN_PROGRESS,
         source_url=body.source_url,
         ats_job_id=body.ats_job_id,
+        workday_tenant=extract_workday_tenant(body.source_url),
     )
     db.add(application)
     db.flush()

@@ -21,6 +21,7 @@ from app.utils.email_filter import is_job_related
 from app.utils.encryption import decrypt_token, encrypt_token
 from app.utils.gmail_client import GmailClientInterface, RealGmailClient
 from app.utils.logging import get_logger
+from app.utils.workday import extract_tenant_from_sender
 
 _logger = get_logger("gmail_poller")
 
@@ -47,6 +48,28 @@ def _load_active_company_names(db: Session, user_id: uuid.UUID) -> set[str]:
                 ApplicationStatus.APPLIED,
                 ApplicationStatus.INTERVIEW,
             ])
+        )
+    ).scalars().all()
+    return set(rows)
+
+
+def _load_active_workday_tenants(db: Session, user_id: uuid.UUID) -> set[str]:
+    """Returns the set of Workday tenant strings for all active applications.
+
+    Used alongside active_companies in the fine gate — an email passes if the
+    sender tenant matches any active tenant, even when the Gemini-extracted
+    company name doesn't match a known company.
+    """
+    rows = db.execute(
+        select(Application.workday_tenant)
+        .where(
+            Application.user_id == user_id,
+            Application.status.in_([
+                ApplicationStatus.IN_PROGRESS,
+                ApplicationStatus.APPLIED,
+                ApplicationStatus.INTERVIEW,
+            ]),
+            Application.workday_tenant.isnot(None),
         )
     ).scalars().all()
     return set(rows)
@@ -124,6 +147,7 @@ def poll_gmail_account(
             gmail_client = RealGmailClient(credentials)
 
         active_companies = _load_active_company_names(db, account.user_id)
+        active_tenants = _load_active_workday_tenants(db, account.user_id)
 
         since = account.last_polled_at or (
             datetime.now(timezone.utc) - timedelta(days=30)
@@ -181,7 +205,7 @@ def poll_gmail_account(
                     continue
 
                 # Coarse gate: skip Gemini entirely if user has no active applications
-                if not active_companies:
+                if not active_companies and not active_tenants:
                     _logger.info(
                         "No active applications — skipping email",
                         extra={
@@ -206,8 +230,8 @@ def poll_gmail_account(
                         or normalize_company_name(classification.company) not in active_companies
                     )
                 ):
-                    # Bypass: allow through if subject contains an R-number
-                    # matching an active application's ats_job_id
+                    # Bypass 1: R-number in subject matches an active app's ats_job_id
+                    bypassed = False
                     r_number = extract_ats_job_id(subject)
                     if r_number:
                         has_ats_match = db.scalar(
@@ -228,18 +252,24 @@ def poll_gmail_account(
                                     "action_taken": "fine_gate_ats_bypass",
                                 },
                             )
-                        else:
+                            bypassed = True
+
+                    # Bypass 2: sender tenant matches an active Workday tenant
+                    if not bypassed:
+                        sender_tenant = extract_tenant_from_sender(sender)
+                        if sender_tenant and sender_tenant in active_tenants:
                             _logger.info(
-                                "Email company has no active application — skipping",
+                                "Fine gate bypassed via tenant match",
                                 extra={
                                     "gmail_message_id": message_id,
                                     "email_account_id": account_id,
                                     "gemini_signal": classification.signal,
-                                    "action_taken": "no_in_progress_match",
+                                    "action_taken": "fine_gate_tenant_bypass",
                                 },
                             )
-                            continue
-                    else:
+                            bypassed = True
+
+                    if not bypassed:
                         _logger.info(
                             "Email company has no active application — skipping",
                             extra={
@@ -349,7 +379,12 @@ def poll_gmail_account(
                                 Application.ats_job_id.contains(retry_r_number),
                             )
                         ))
-                if company_matches or ats_matches:
+                # Bypass: allow through if sender tenant matches an active tenant
+                tenant_matches = False
+                if not company_matches and not ats_matches:
+                    retry_tenant = extract_tenant_from_sender(raw_email.sender or "")
+                    tenant_matches = bool(retry_tenant and retry_tenant in active_tenants)
+                if company_matches or ats_matches or tenant_matches:
                     process_email_signal(db, account.user_id, raw_email, classification)
                 else:
                     _logger.info(

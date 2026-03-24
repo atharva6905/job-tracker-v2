@@ -89,6 +89,10 @@ def _run_poll(db: Session, account_id: str, gmail_client: GmailClientInterface) 
             "app.jobs.poll_job._load_active_company_names",
             return_value={"test company"},
         ),
+        patch(
+            "app.jobs.poll_job._load_active_workday_tenants",
+            return_value=set(),
+        ),
     ):
         poll_gmail_account(account_id, gmail_client=gmail_client)
     wrapped.close.assert_called_once()
@@ -703,3 +707,150 @@ class TestParseErrorCleanup:
         assert "recent_orphan_1" in remaining_ids
         assert "old_linked_1" in remaining_ids
         assert "old_applied_1" in remaining_ids
+
+
+# ---------------------------------------------------------------------------
+# Workday tenant fine gate bypass
+# ---------------------------------------------------------------------------
+
+
+class TestTenantFineGate:
+    """Tests for tenant-based fine gate bypass."""
+
+    def test_fine_gate_passes_on_tenant_match(self, db, test_user):
+        """Email from tenant@myworkday.com passes fine gate when tenant matches active app,
+        even when Gemini company name doesn't match any active company."""
+        from app.models.application import Application, ApplicationStatus
+        from app.models.company import Company
+        from app.utils.company import normalize_company_name
+
+        account = _make_account(db, test_user)
+
+        # Active app with workday_tenant="meredith" but company is "Meredith"
+        company = Company(
+            user_id=test_user.id,
+            name="Meredith",
+            normalized_name=normalize_company_name("Meredith"),
+        )
+        db.add(company)
+        db.flush()
+        db.add(Application(
+            user_id=test_user.id,
+            company_id=company.id,
+            role="Engineer",
+            status=ApplicationStatus.IN_PROGRESS,
+            workday_tenant="meredith",
+        ))
+        db.flush()
+
+        # Email sender is meredith@myworkday.com, but Gemini says company is "People Inc."
+        tenant_classification = GeminiClassificationResult(
+            company="People Inc.",
+            role="Software Engineer",
+            signal="APPLIED",
+            confidence=0.95,
+        )
+
+        msg = {
+            "id": "msg_tenant_001",
+            "snippet": "Thank you for applying...",
+            "payload": {
+                "headers": [
+                    {"name": "Subject", "value": "Application received — Software Engineer"},
+                    {"name": "From", "value": "meredith@myworkday.com"},
+                    {"name": "Date", "value": "Thu, 18 Mar 2026 10:00:00 +0000"},
+                ]
+            },
+        }
+
+        mock_process = MagicMock()
+        wrapped = MagicMock(wraps=db)
+        wrapped.close = MagicMock()
+
+        from app.jobs.poll_job import poll_gmail_account
+        from sqlalchemy import select as sa_select
+        from app.models.raw_email import RawEmail
+
+        with (
+            patch("app.jobs.poll_job.SessionLocal", return_value=wrapped),
+            patch("app.jobs.poll_job.classify_email", return_value=tenant_classification),
+            patch("app.jobs.poll_job.process_email_signal", mock_process),
+            patch("app.jobs.poll_job.is_job_related", return_value=True),
+        ):
+            poll_gmail_account(str(account.id), gmail_client=MockGmailClient(messages=[msg]))
+
+        # Email should be stored (fine gate bypassed via tenant)
+        row = db.scalar(sa_select(RawEmail).where(RawEmail.gmail_message_id == "msg_tenant_001"))
+        assert row is not None
+        assert row.gemini_signal == "APPLIED"
+        mock_process.assert_called_once()
+        wrapped.close.assert_called_once()
+
+    def test_parse_error_retry_with_tenant_match(self, db, test_user):
+        """PARSE_ERROR retry: sender tenant matches active tenant → process_email_signal called."""
+        from app.models.application import Application, ApplicationStatus
+        from app.models.company import Company
+        from app.models.raw_email import RawEmail
+        from app.utils.company import normalize_company_name
+
+        account = _make_account(db, test_user)
+
+        # Active app with workday_tenant
+        company = Company(
+            user_id=test_user.id,
+            name="Meredith",
+            normalized_name=normalize_company_name("Meredith"),
+        )
+        db.add(company)
+        db.flush()
+        db.add(Application(
+            user_id=test_user.id,
+            company_id=company.id,
+            role="Engineer",
+            status=ApplicationStatus.IN_PROGRESS,
+            workday_tenant="meredith",
+        ))
+        db.flush()
+
+        # Pre-seed a PARSE_ERROR email from a Workday tenant sender
+        existing = RawEmail(
+            email_account_id=account.id,
+            gmail_message_id="msg_retry_tenant_1",
+            subject="Application Update",
+            sender="meredith@myworkday.com",
+            received_at=datetime.now(timezone.utc),
+            body_snippet="We wanted to follow up...",
+            gemini_signal="PARSE_ERROR",
+            gemini_confidence=0.0,
+        )
+        db.add(existing)
+        db.flush()
+
+        # Retry classification: company doesn't match active companies, but tenant does
+        retry_classification = GeminiClassificationResult(
+            company="People Inc.",
+            role="Software Engineer",
+            signal="APPLIED",
+            confidence=0.90,
+        )
+
+        mock_process = MagicMock()
+        wrapped = MagicMock(wraps=db)
+        wrapped.close = MagicMock()
+
+        from app.jobs.poll_job import poll_gmail_account
+
+        with (
+            patch("app.jobs.poll_job.SessionLocal", return_value=wrapped),
+            patch("app.jobs.poll_job.classify_email", return_value=retry_classification),
+            patch("app.jobs.poll_job.process_email_signal", mock_process),
+            patch(
+                "app.jobs.poll_job._load_active_company_names",
+                return_value={"meredith"},  # "people inc." not in this set
+            ),
+        ):
+            poll_gmail_account(str(account.id), gmail_client=MockGmailClient(messages=[]))
+
+        # Retry loop should fire process_email_signal via tenant bypass
+        mock_process.assert_called_once()
+        wrapped.close.assert_called_once()
