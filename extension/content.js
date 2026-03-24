@@ -185,18 +185,13 @@ function maybeShowOverlay() {
 // Clean up overlay on browser back/forward navigation.
 window.addEventListener("popstate", removeOverlayAndCancel);
 
-// Detect Workday SPA navigation (pushState) by observing <title> changes.
-// Chrome does not reinject content scripts on pushState, and popstate only fires
-// on back/forward. Title changes ARE visible from the isolated world.
-const titleEl = document.querySelector("title");
-if (titleEl) {
-  const titleObserver = new MutationObserver(() => {
-    if (/\/apply(\/|$)/.test(window.location.pathname)) {
-      removeOverlayAndCancel();
-    }
-  });
-  titleObserver.observe(titleEl, { childList: true, characterData: true, subtree: true });
-}
+// Listen for HIDE_OVERLAY from background.js (triggered by chrome.tabs.onUpdated
+// when Workday SPA navigates to /apply/ via pushState).
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.type === "HIDE_OVERLAY") {
+    removeOverlayAndCancel();
+  }
+});
 
 // Wait for DOM to settle before checking (1.5s covers lazy-rendered ATS pages)
 if (document.readyState === "complete" || document.readyState === "interactive") {

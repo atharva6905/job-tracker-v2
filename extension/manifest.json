@@ -5,7 +5,13 @@
   "description": "Automatically tracks job applications. Zero manual entry.",
   "permissions": ["storage", "activeTab", "scripting"],
   "host_permissions": [
-    "http://localhost:8000/*"
+    "http://localhost:8000/*",
+    "*://*.wd1.myworkdayjobs.com/*",
+    "*://*.wd3.myworkdayjobs.com/*",
+    "*://*.wd5.myworkdayjobs.com/*",
+    "*://*.wd501.myworkdayjobs.com/*",
+    "*://*.myworkday.com/*",
+    "*://*.myworkdaysite.com/*"
   ],
   "background": {
     "service_worker": "background.js"

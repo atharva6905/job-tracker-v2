@@ -52,3 +52,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // keep channel open for async response
   }
 });
+
+// Detect Workday SPA navigation (pushState) and tell content script to hide overlay.
+// chrome.tabs.onUpdated fires on pushState URL changes — the only reliable way to
+// detect SPA navigation from a MV3 extension (content script isolated world cannot
+// intercept pushState calls from the page's main world).
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.url && /\/apply(\/|$)/.test(new URL(changeInfo.url).pathname)) {
+    chrome.tabs.sendMessage(tabId, { type: "HIDE_OVERLAY" }).catch(() => {});
+  }
+});
