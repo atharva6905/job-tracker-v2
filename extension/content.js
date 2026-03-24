@@ -77,12 +77,15 @@ function guessCompanyFromPage() {
 }
 
 // ─── OVERLAY ──────────────────────────────────────────────────────────────────
-let overlayShown = false;
+// Persist across content script reinjections within the same tab session.
+// Workday SPA navigation can cause reinjection with a fresh overlayShown = false.
+let overlayShown = sessionStorage.getItem("jt_overlay_shown") === "1";
 
 function maybeShowOverlay() {
   if (overlayShown) return;
   if (!isJobApplicationPage()) return;
   overlayShown = true;
+  sessionStorage.setItem("jt_overlay_shown", "1");
 
   const overlay = document.createElement("div");
   overlay.id = "jt-overlay";
@@ -166,6 +169,20 @@ function maybeShowOverlay() {
     });
   };
 }
+
+// ─── SPA NAVIGATION CLEANUP ──────────────────────────────────────────────────
+// Workday is an SPA — when the user clicks Apply, pushState changes the URL but
+// the DOM (including our overlay) persists. Remove the overlay if the URL leaves
+// the job posting page.
+let lastHref = window.location.href;
+const hrefObserver = new MutationObserver(() => {
+  if (window.location.href === lastHref) return;
+  lastHref = window.location.href;
+  if (!isJobApplicationPage()) {
+    document.getElementById("jt-overlay")?.remove();
+  }
+});
+hrefObserver.observe(document.body, { childList: true, subtree: true });
 
 // Wait for DOM to settle before checking (1.5s covers lazy-rendered ATS pages)
 if (document.readyState === "complete" || document.readyState === "interactive") {
