@@ -119,7 +119,15 @@ function guessCompanyFromPage() {
   const wdCompany = wdCompanyName || wdOrgName;
   if (wdCompany) return wdCompany.substring(0, 255);
 
-  if (slug && slug.toLowerCase() !== "careers" && slug.length > 1) {
+  // Try subdomain — e.g. "meredith" from "meredith.wd5.myworkdayjobs.com"
+  const hostParts = window.location.hostname.split(".");
+  if (hostParts.length > 1 && !/^wd\d+$/i.test(hostParts[0])) {
+    const subdomain = hostParts[0].charAt(0).toUpperCase() + hostParts[0].slice(1);
+    return subdomain.substring(0, 255);
+  }
+
+  // Only use URL slug if it's longer than 3 chars (avoids "EXT", "US", etc.)
+  if (slug && slug.toLowerCase() !== "careers" && slug.length > 3) {
     return slug.substring(0, 255);
   }
 
