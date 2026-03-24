@@ -12,7 +12,14 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
+      "matches": [
+        "*://*.wd1.myworkdayjobs.com/*",
+        "*://*.wd3.myworkdayjobs.com/*",
+        "*://*.wd5.myworkdayjobs.com/*",
+        "*://*.wd501.myworkdayjobs.com/*",
+        "*://*.myworkday.com/*",
+        "*://*.myworkdaysite.com/*"
+      ],
       "js": ["content.js"],
       "run_at": "document_idle"
     }

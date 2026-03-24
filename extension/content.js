@@ -1,26 +1,35 @@
+// ─── WORKDAY-ONLY GUARD ───────────────────────────────────────────────────────
+// Content script only runs on Workday pages (manifest matches restrict injection,
+// but guard as defense-in-depth + meta tag fallback).
+const WORKDAY_URL_PATTERNS = [
+  /\.wd\d+\.myworkdayjobs\.com/,
+  /\.myworkday\.com/,
+  /\.myworkdaysite\.com/
+];
+
+function isWorkdayPage() {
+  const url = window.location.href.toLowerCase();
+  if (WORKDAY_URL_PATTERNS.some(p => p.test(url))) return true;
+  const meta = document.querySelector('meta[name="application-name"]');
+  return meta?.content?.toLowerCase() === "workday";
+}
+
+if (!isWorkdayPage()) {
+  // Not a Workday page — bail out silently. No marker, no overlay, no scraping.
+  throw new Error("job-tracker-v2: not a Workday page, exiting content script");
+}
+
 // ─── EXTENSION DETECTION MARKER ───────────────────────────────────────────────
 // Inject a hidden div so the frontend can detect extension installation.
 // Frontend (dashboard first-run checklist) checks:
 //   document.getElementById("job-tracker-v2-ext")
-// This runs on every page at document_idle.
+// Only injected on Workday pages.
 const marker = document.createElement("div");
 marker.id = "job-tracker-v2-ext";
 marker.style.display = "none";
 document.body.appendChild(marker);
 
-// ─── ATS DETECTION ────────────────────────────────────────────────────────────
-const ATS_URL_PATTERNS = [
-  /myworkday\.com/,
-  /greenhouse\.io/,
-  /lever\.co/,
-  /ashbyhq\.com/,
-  /icims\.com/,
-  /smartrecruiters\.com/,
-  /taleo\.net/,
-  /jobvite\.com/,
-  /bamboohr\.com/
-];
-
+// ─── WORKDAY APPLICATION PAGE DETECTION ───────────────────────────────────────
 // Look for these keywords in label text or input placeholders
 const FORM_FIELD_KEYWORDS = [
   "first name", "last name", "resume", "cover letter",
@@ -28,14 +37,10 @@ const FORM_FIELD_KEYWORDS = [
 ];
 
 function isJobApplicationPage() {
-  const url = window.location.href.toLowerCase();
-  if (ATS_URL_PATTERNS.some(pattern => pattern.test(url))) return true;
-
   // Generic heuristic: enough job-form keywords present in the DOM
-  const inputs = document.querySelectorAll("input, textarea");
   const labels = document.querySelectorAll("label");
-  const allText = [...inputs, ...labels]
-    .map(el => (el.placeholder || el.textContent || "").toLowerCase())
+  const allText = [...labels]
+    .map(el => (el.textContent || "").toLowerCase())
     .join(" ");
   const matchCount = FORM_FIELD_KEYWORDS.filter(k => allText.includes(k)).length;
   return matchCount >= 2;
