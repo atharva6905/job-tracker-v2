@@ -37,7 +37,10 @@ const FORM_FIELD_KEYWORDS = [
 ];
 
 function isJobApplicationPage() {
-  // Generic heuristic: enough job-form keywords present in the DOM
+  // Workday job posting page — URL contains /job/ (the page with Apply button + JD)
+  if (/\/job\//.test(window.location.pathname)) return true;
+
+  // Workday apply form — fallback heuristic for /apply/ pages
   const labels = document.querySelectorAll("label");
   const allText = [...labels]
     .map(el => (el.textContent || "").toLowerCase())
