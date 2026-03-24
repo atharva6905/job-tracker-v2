@@ -171,18 +171,27 @@ function maybeShowOverlay() {
 }
 
 // ─── SPA NAVIGATION CLEANUP ──────────────────────────────────────────────────
-// Workday is an SPA — when the user clicks Apply, pushState changes the URL but
-// the DOM (including our overlay) persists. Remove the overlay if the URL leaves
-// the job posting page.
-let lastHref = window.location.href;
-const hrefObserver = new MutationObserver(() => {
-  if (window.location.href === lastHref) return;
-  lastHref = window.location.href;
+// Workday is an SPA — pushState changes the URL without a page reload, so the
+// overlay DOM persists. MutationObserver on body doesn't catch URL changes.
+// Intercept pushState/replaceState + listen for popstate to detect all navigations.
+function onUrlChange() {
   if (!isJobApplicationPage()) {
     document.getElementById("jt-overlay")?.remove();
   }
-});
-hrefObserver.observe(document.body, { childList: true, subtree: true });
+}
+
+// Monkey-patch History API — pushState/replaceState don't fire any event by default.
+for (const method of ["pushState", "replaceState"]) {
+  const original = history[method];
+  history[method] = function (...args) {
+    const result = original.apply(this, args);
+    onUrlChange();
+    return result;
+  };
+}
+
+// popstate fires on back/forward navigation.
+window.addEventListener("popstate", onUrlChange);
 
 // Wait for DOM to settle before checking (1.5s covers lazy-rendered ATS pages)
 if (document.readyState === "complete" || document.readyState === "interactive") {
