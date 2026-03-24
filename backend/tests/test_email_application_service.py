@@ -678,7 +678,7 @@ class TestJaccardSimilarity:
 
     def test_jaccard_excludes_old_apps(self, db, test_user, email_account):
         """Apps older than 14 days are excluded from Jaccard matching."""
-        from datetime import timedelta, timezone
+        from datetime import timezone
 
         company = _make_company(db, test_user.id, "Unknown Corp")
         app = _make_application(
