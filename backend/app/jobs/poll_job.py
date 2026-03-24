@@ -55,6 +55,7 @@ def _load_active_company_names(db: Session, user_id: uuid.UUID) -> set[str]:
 def poll_gmail_account(
     account_id: str, gmail_client: GmailClientInterface | None = None
 ) -> None:
+    print("POLL_GMAIL_ACCOUNT CALLED", flush=True)
     """
     Poll a single Gmail account for new emails.
 
