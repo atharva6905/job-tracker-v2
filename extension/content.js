@@ -20,6 +20,17 @@ if (!isWorkdayPage() || /\/apply(\/|$)/.test(window.location.pathname)) {
   throw new Error("job-tracker-v2: not a Workday job posting page, exiting content script");
 }
 
+// Track pending overlay timeouts so SPA navigation can cancel them.
+let overlayTimeoutId = null;
+
+function removeOverlayAndCancel() {
+  if (overlayTimeoutId !== null) {
+    clearTimeout(overlayTimeoutId);
+    overlayTimeoutId = null;
+  }
+  document.getElementById("jt-overlay")?.remove();
+}
+
 // ─── EXTENSION DETECTION MARKER ───────────────────────────────────────────────
 // Inject a hidden div so the frontend can detect extension installation.
 // Frontend (dashboard first-run checklist) checks:
@@ -166,19 +177,32 @@ function maybeShowOverlay() {
       }
       // Always remove overlay after brief status flash — prevents DOM persistence
       // across Workday SPA navigation (pushState doesn't reinject content scripts).
-      setTimeout(() => overlay.remove(), 1500);
+      overlayTimeoutId = setTimeout(() => { overlay.remove(); overlayTimeoutId = null; }, 1500);
     });
   };
 }
 
 // Clean up overlay on browser back/forward navigation.
-window.addEventListener("popstate", () => {
-  document.getElementById("jt-overlay")?.remove();
-});
+window.addEventListener("popstate", removeOverlayAndCancel);
+
+// Detect Workday SPA navigation (pushState) by observing <title> changes.
+// Chrome does not reinject content scripts on pushState, and popstate only fires
+// on back/forward. Title changes ARE visible from the isolated world.
+const titleEl = document.querySelector("title");
+if (titleEl) {
+  const titleObserver = new MutationObserver(() => {
+    if (/\/apply(\/|$)/.test(window.location.pathname)) {
+      removeOverlayAndCancel();
+    }
+  });
+  titleObserver.observe(titleEl, { childList: true, characterData: true, subtree: true });
+}
 
 // Wait for DOM to settle before checking (1.5s covers lazy-rendered ATS pages)
 if (document.readyState === "complete" || document.readyState === "interactive") {
-  setTimeout(maybeShowOverlay, 1500);
+  overlayTimeoutId = setTimeout(maybeShowOverlay, 1500);
 } else {
-  document.addEventListener("DOMContentLoaded", () => setTimeout(maybeShowOverlay, 1500));
+  document.addEventListener("DOMContentLoaded", () => {
+    overlayTimeoutId = setTimeout(maybeShowOverlay, 1500);
+  });
 }
