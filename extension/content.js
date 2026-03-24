@@ -30,6 +30,15 @@ marker.style.display = "none";
 document.body.appendChild(marker);
 
 // ─── WORKDAY JOB POSTING PAGE DETECTION ───────────────────────────────────────
+// Extract the job ID segment from a Workday URL path.
+// e.g. /en-US/sdm_careers/job/.../Cashier_R2000648316 → "Cashier_R2000648316"
+function extractJobId() {
+  const parts = window.location.pathname.split("/job/")[1]?.split("/") || [];
+  // Last segment before /apply/ (or the last segment if no /apply/)
+  const filtered = parts.filter(s => s && s !== "apply" && s !== "autofillWithResume");
+  return filtered[filtered.length - 1] || null;
+}
+
 function isJobApplicationPage() {
   // Only match the job posting page (/job/{jobId}) — this is the page with the
   // Apply button and visible JD. The multi-step apply form pages (/apply/ etc.)
@@ -77,15 +86,20 @@ function guessCompanyFromPage() {
 }
 
 // ─── OVERLAY ──────────────────────────────────────────────────────────────────
-// Persist across content script reinjections within the same tab session.
-// Workday SPA navigation can cause reinjection with a fresh overlayShown = false.
-let overlayShown = sessionStorage.getItem("jt_overlay_shown") === "1";
+function alreadyShownForJob() {
+  const jobId = extractJobId();
+  return jobId && sessionStorage.getItem(`jt_shown_${jobId}`) === "1";
+}
+
+function markShownForJob() {
+  const jobId = extractJobId();
+  if (jobId) sessionStorage.setItem(`jt_shown_${jobId}`, "1");
+}
 
 function maybeShowOverlay() {
-  if (overlayShown) return;
+  if (alreadyShownForJob()) return;
   if (!isJobApplicationPage()) return;
-  overlayShown = true;
-  sessionStorage.setItem("jt_overlay_shown", "1");
+  markShownForJob();
 
   const overlay = document.createElement("div");
   overlay.id = "jt-overlay";
