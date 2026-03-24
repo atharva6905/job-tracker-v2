@@ -6,10 +6,6 @@ Pure functions — no DB access, no side effects. Stdlib only.
 import re
 from urllib.parse import urlparse
 
-_SHARED_WORKDAY_SENDERS = frozenset({
-    "myview", "noreply", "donotreply", "no-reply", "workday",
-})
-
 # Matches: {tenant}.wd1.myworkdayjobs.com, {tenant}.myworkday.com, etc.
 _WORKDAY_HOST_RE = re.compile(
     r"^([^.]+)\.(wd\d+\.)?myworkday(jobs|site)?\.com$", re.IGNORECASE
@@ -43,9 +39,11 @@ def extract_tenant_from_sender(sender_email: str | None) -> str | None:
     """Extract the Workday tenant from a sender email address.
 
     Only matches ``{tenant}@myworkday.com`` (exact domain).
-    Returns None for shared/generic senders (noreply, myview, etc.).
-
     Handles display-name format: ``"Workday <meredith@myworkday.com>"``.
+
+    No static blocklist — callers validate the result against real DB data
+    (active_tenants set or Application.workday_tenant query), which prevents
+    false positives without blocking legitimate tenants like "myview" (SDM).
     """
     if not sender_email:
         return None
@@ -58,7 +56,4 @@ def extract_tenant_from_sender(sender_email: str | None) -> str | None:
     local, domain = parts
     if domain.lower() != "myworkday.com":
         return None
-    local_lower = local.lower()
-    if local_lower in _SHARED_WORKDAY_SENDERS:
-        return None
-    return local_lower
+    return local.lower()

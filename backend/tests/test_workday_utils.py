@@ -60,12 +60,15 @@ class TestExtractTenantFromSender:
     def test_display_name_with_quotes(self):
         assert extract_tenant_from_sender('"Meredith HR" <meredith@myworkday.com>') == "meredith"
 
-    @pytest.mark.parametrize("shared", ["myview", "noreply", "donotreply", "no-reply", "workday"])
-    def test_shared_senders_return_none(self, shared):
-        assert extract_tenant_from_sender(f"{shared}@myworkday.com") is None
+    @pytest.mark.parametrize(
+        "local", ["myview", "noreply", "donotreply", "no-reply", "workday"],
+    )
+    def test_generic_senders_return_local_part(self, local):
+        """No static blocklist — DB validation handles false-positive prevention."""
+        assert extract_tenant_from_sender(f"{local}@myworkday.com") == local
 
-    def test_shared_sender_case_insensitive(self):
-        assert extract_tenant_from_sender("NoReply@myworkday.com") is None
+    def test_generic_sender_case_insensitive(self):
+        assert extract_tenant_from_sender("NoReply@myworkday.com") == "noreply"
 
     def test_non_myworkday_domain_returns_none(self):
         assert extract_tenant_from_sender("meredith@myworkdayjobs.com") is None
