@@ -3,7 +3,7 @@
   "name": "job-tracker-v2",
   "version": "1.0.0",
   "description": "Automatically tracks job applications. Zero manual entry.",
-  "permissions": ["storage", "activeTab", "scripting"],
+  "permissions": ["storage", "activeTab", "scripting", "tabs"],
   "host_permissions": [
     "http://localhost:8000/*",
     "*://*.wd1.myworkdayjobs.com/*",
