@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth-provider";
@@ -28,6 +28,13 @@ export default function SettingsPage() {
   const [deleting, setDeleting] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [resyncingId, setResyncingId] = useState<string | null>(null);
+  const resyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (resyncTimerRef.current) clearTimeout(resyncTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     fetchAPI<EmailAccount[]>("/gmail/accounts")
@@ -61,9 +68,10 @@ export default function SettingsPage() {
     setResyncingId(accountId);
     try {
       await fetchAPI(`/gmail/accounts/${accountId}/poll?force=true`, { method: "POST" });
+      // Poll runs in the background — keep button disabled so it doesn't look like a no-op
+      resyncTimerRef.current = setTimeout(() => setResyncingId(null), 15_000);
     } catch {
-      // Error handled by fetchAPI
-    } finally {
+      // Error handled by fetchAPI — reset immediately on failure
       setResyncingId(null);
     }
   };
