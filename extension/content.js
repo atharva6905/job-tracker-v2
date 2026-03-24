@@ -14,8 +14,8 @@ function isWorkdayPage() {
   return meta?.content?.toLowerCase() === "workday";
 }
 
-if (!isWorkdayPage() || /\/apply(\/|$)/.test(window.location.pathname)) {
-  // Not a Workday job posting page, or on an apply form page — exit immediately.
+if (!isWorkdayPage() || /\/apply(\/|$)/.test(window.location.pathname) || !/\/job\/[^/]/.test(window.location.pathname)) {
+  // Not a Workday job detail page (requires /job/{id}), or on an apply form — exit.
   // No marker, no overlay, no scraping.
   throw new Error("job-tracker-v2: not a Workday job posting page, exiting content script");
 }
