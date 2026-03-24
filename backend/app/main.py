@@ -72,12 +72,15 @@ class ContentSizeLimitMiddleware(BaseHTTPMiddleware):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # --- Startup ---
+    print("LIFESPAN STARTUP RUNNING", flush=True)
     scheduler.start()
     scheduler.add_listener(_scheduler_job_error_listener, EVENT_JOB_ERROR)
 
     db = SessionLocal()
     try:
+        print("LIFESPAN: querying email_accounts...", flush=True)
         accounts = db.scalars(select(EmailAccount)).all()
+        print(f"LIFESPAN: found {len(accounts)} email account(s)", flush=True)
         registered = 0
         for account in accounts:
             scheduler.add_job(
@@ -90,11 +93,13 @@ async def lifespan(app: FastAPI):
                 replace_existing=True,
             )
             registered += 1
+        print(f"LIFESPAN: registered {registered} poll job(s)", flush=True)
         _logger.info(
             "Startup poll jobs registered",
             extra={"account_count": registered, "action_taken": "startup_job_registration"},
         )
     except Exception:
+        print("LIFESPAN: EXCEPTION during job registration — see logs", flush=True)
         _logger.error(
             "Failed to register poll jobs on startup — scheduler will have no poll jobs",
             exc_info=True,

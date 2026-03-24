@@ -6,6 +6,12 @@
 
 FROM python:3.13-slim
 
+# Disable Python stdout buffering so JSON logs appear immediately in docker logs.
+# Without this, stdout is block-buffered inside Docker (no TTY) and log lines
+# accumulate in an 8 KB buffer that never gets flushed — making the container
+# appear silent even when it's writing output.
+ENV PYTHONUNBUFFERED=1
+
 WORKDIR /app
 
 COPY requirements.txt .
