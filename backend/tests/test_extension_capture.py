@@ -221,3 +221,126 @@ def test_capture_rate_limit_at_61(client, auth_headers):
 
     resp = client.post("/extension/capture", json=payload, headers=auth_headers)
     assert resp.status_code == 429
+
+
+# ---------------------------------------------------------------------------
+# Optional job_description (auto-capture sends empty JD)
+# ---------------------------------------------------------------------------
+
+
+def test_capture_with_empty_job_description(client, auth_headers, db):
+    payload = {
+        "company_name": "Auto Corp",
+        "role": "Engineer",
+        "source_url": "https://auto.wd5.myworkdayjobs.com/en-US/careers/job/Engineer_R123",
+    }
+    resp = client.post("/extension/capture", json=payload, headers=auth_headers)
+    assert resp.status_code == 201
+
+    app = db.scalar(
+        select(Application).where(Application.id == uuid.UUID(resp.json()["application_id"]))
+    )
+    assert app is not None
+    assert app.status == ApplicationStatus.IN_PROGRESS
+
+    jd = db.scalar(select(JobDescription).where(JobDescription.application_id == app.id))
+    assert jd is not None
+    assert jd.raw_text == ""
+
+
+# ---------------------------------------------------------------------------
+# POST /extension/applied — mark IN_PROGRESS → APPLIED
+# ---------------------------------------------------------------------------
+
+APPLIED_SOURCE_URL = "https://acme.wd5.myworkdayjobs.com/en-US/careers/job/Eng_R123"
+
+
+def _create_in_progress(client, auth_headers, source_url=APPLIED_SOURCE_URL):
+    payload = {
+        "company_name": "Acme Corp",
+        "role": "Engineer",
+        "source_url": source_url,
+        "job_description": "A great role.",
+    }
+    resp = client.post("/extension/capture", json=payload, headers=auth_headers)
+    assert resp.status_code == 201
+    return resp.json()
+
+
+def test_applied_transitions_in_progress(client, auth_headers, db):
+    from datetime import date
+
+    capture = _create_in_progress(client, auth_headers)
+    resp = client.post(
+        "/extension/applied",
+        json={"source_url": APPLIED_SOURCE_URL},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "APPLIED"
+    assert data["message"] == "applied"
+    assert data["application_id"] == capture["application_id"]
+
+    app = db.scalar(
+        select(Application).where(Application.id == uuid.UUID(data["application_id"]))
+    )
+    assert app.status == ApplicationStatus.APPLIED
+    assert app.date_applied == date.today()
+
+
+def test_applied_on_non_in_progress_returns_404(client, auth_headers, db):
+    _create_in_progress(client, auth_headers)
+    # Advance to APPLIED first
+    resp1 = client.post(
+        "/extension/applied",
+        json={"source_url": APPLIED_SOURCE_URL},
+        headers=auth_headers,
+    )
+    assert resp1.status_code == 200
+
+    # Second call — app is now APPLIED, not IN_PROGRESS → 404
+    resp2 = client.post(
+        "/extension/applied",
+        json={"source_url": APPLIED_SOURCE_URL},
+        headers=auth_headers,
+    )
+    assert resp2.status_code == 404
+
+
+def test_applied_unknown_source_url_returns_404(client, auth_headers):
+    resp = client.post(
+        "/extension/applied",
+        json={"source_url": "https://nonexistent.com/job/123"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 404
+
+
+def test_applied_unauthenticated_returns_401(client):
+    resp = client.post(
+        "/extension/applied",
+        json={"source_url": APPLIED_SOURCE_URL},
+    )
+    assert resp.status_code == 401
+
+
+def test_applied_extra_field_returns_422(client, auth_headers):
+    _create_in_progress(client, auth_headers)
+    resp = client.post(
+        "/extension/applied",
+        json={"source_url": APPLIED_SOURCE_URL, "unexpected": "bad"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
+
+
+def test_applied_isolation_other_user(client, auth_headers, other_auth_headers):
+    """One user's APPLIED call cannot transition another user's application."""
+    _create_in_progress(client, auth_headers)
+    resp = client.post(
+        "/extension/applied",
+        json={"source_url": APPLIED_SOURCE_URL},
+        headers=other_auth_headers,
+    )
+    assert resp.status_code == 404

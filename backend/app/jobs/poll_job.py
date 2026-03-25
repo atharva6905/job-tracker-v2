@@ -237,7 +237,11 @@ def poll_gmail_account(
                         has_ats_match = db.scalar(
                             select(Application.id).where(
                                 Application.user_id == account.user_id,
-                                Application.status == ApplicationStatus.IN_PROGRESS,
+                                Application.status.in_([
+                                    ApplicationStatus.IN_PROGRESS,
+                                    ApplicationStatus.APPLIED,
+                                    ApplicationStatus.INTERVIEW,
+                                ]),
                                 Application.ats_job_id.isnot(None),
                                 Application.ats_job_id.contains(r_number),
                             )
@@ -376,7 +380,11 @@ def poll_gmail_account(
                         ats_matches = bool(db.scalar(
                             select(Application.id).where(
                                 Application.user_id == account.user_id,
-                                Application.status == ApplicationStatus.IN_PROGRESS,
+                                Application.status.in_([
+                                    ApplicationStatus.IN_PROGRESS,
+                                    ApplicationStatus.APPLIED,
+                                    ApplicationStatus.INTERVIEW,
+                                ]),
                                 Application.ats_job_id.isnot(None),
                                 Application.ats_job_id.contains(retry_r_number),
                             )

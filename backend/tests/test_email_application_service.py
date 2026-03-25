@@ -102,8 +102,8 @@ def _make_application(
 
 
 class TestProcessEmailSignal:
-    def test_in_progress_to_applied(self, db, test_user, email_account):
-        """IN_PROGRESS + APPLIED signal → transitions to APPLIED, date_applied = received_at."""
+    def test_applied_signal_on_in_progress_is_skipped(self, db, test_user, email_account):
+        """IN_PROGRESS + APPLIED signal → skipped (extension handles this transition)."""
         company = _make_company(db, test_user.id)
         app = _make_application(db, test_user.id, company.id, ApplicationStatus.IN_PROGRESS)
         received = datetime(2025, 6, 15, 14, 30, 0, tzinfo=timezone.utc)
@@ -119,12 +119,12 @@ class TestProcessEmailSignal:
         process_email_signal(db, test_user.id, raw_email, classification)
 
         db.refresh(app)
-        assert app.status == ApplicationStatus.APPLIED
-        assert app.date_applied == received.date()
-        assert raw_email.linked_application_id == app.id
+        assert app.status == ApplicationStatus.IN_PROGRESS
+        assert app.date_applied is None
+        assert raw_email.linked_application_id is None
 
-    def test_dedup_prefers_source_url(self, db, test_user, email_account):
-        """When multiple IN_PROGRESS apps exist, prefer the one with source_url (extension-created)."""
+    def test_applied_signal_on_in_progress_skipped_even_with_source_url(self, db, test_user, email_account):
+        """APPLIED signal on IN_PROGRESS apps is always skipped, regardless of source_url dedup."""
         company = _make_company(db, test_user.id)
         app_no_url = _make_application(
             db, test_user.id, company.id, ApplicationStatus.IN_PROGRESS,
@@ -146,9 +146,9 @@ class TestProcessEmailSignal:
 
         db.refresh(app_with_url)
         db.refresh(app_no_url)
-        assert app_with_url.status == ApplicationStatus.APPLIED
+        assert app_with_url.status == ApplicationStatus.IN_PROGRESS
         assert app_no_url.status == ApplicationStatus.IN_PROGRESS
-        assert raw_email.linked_application_id == app_with_url.id
+        assert raw_email.linked_application_id is None
 
     def test_no_match_is_no_op(self, db, test_user, email_account):
         """No matching application + APPLIED signal → no-op. No new application created."""
@@ -171,8 +171,8 @@ class TestProcessEmailSignal:
         assert count == 0  # no application created
         assert raw_email.linked_application_id is None  # not linked
 
-    def test_company_normalization_google_llc(self, db, test_user, email_account):
-        """'Google LLC' normalizes to 'google' and transitions the existing 'Google' IN_PROGRESS app."""
+    def test_company_normalization_google_llc_applied_skip(self, db, test_user, email_account):
+        """'Google LLC' normalizes to 'google' — match found but APPLIED signal on IN_PROGRESS is skipped."""
         company = _make_company(db, test_user.id, name="Google")
         app = _make_application(db, test_user.id, company.id, ApplicationStatus.IN_PROGRESS)
         raw_email = _make_raw_email(db, email_account)
@@ -186,18 +186,9 @@ class TestProcessEmailSignal:
 
         process_email_signal(db, test_user.id, raw_email, classification)
 
-        # No new company should have been created
-        count = db.scalar(
-            select(func.count())
-            .select_from(Company)
-            .where(Company.user_id == test_user.id)
-        )
-        assert count == 1
-
-        # The existing IN_PROGRESS app should now be APPLIED
         db.refresh(app)
-        assert app.status == ApplicationStatus.APPLIED
-        assert raw_email.linked_application_id == app.id
+        assert app.status == ApplicationStatus.IN_PROGRESS
+        assert raw_email.linked_application_id is None
 
     def test_applied_interview_transitions(self, db, test_user, email_account):
         """APPLIED + INTERVIEW signal → status becomes INTERVIEW (Phase 2 wired)."""
@@ -240,8 +231,8 @@ class TestProcessEmailSignal:
             _make_raw_email(db, email_account, gmail_message_id=msg_id)
         db.rollback()
 
-    def test_date_applied_is_received_at_not_now(self, db, test_user, email_account):
-        """date_applied must be the email's received_at, not the current timestamp."""
+    def test_applied_signal_on_in_progress_does_not_set_date_applied(self, db, test_user, email_account):
+        """APPLIED email signal on IN_PROGRESS is skipped — date_applied stays None."""
         company = _make_company(db, test_user.id)
         app = _make_application(
             db, test_user.id, company.id, ApplicationStatus.IN_PROGRESS,
@@ -260,7 +251,8 @@ class TestProcessEmailSignal:
         process_email_signal(db, test_user.id, raw_email, classification)
 
         db.refresh(app)
-        assert app.date_applied == past.date()  # 2024-01-15, not today
+        assert app.date_applied is None
+        assert app.status == ApplicationStatus.IN_PROGRESS
 
     def test_applied_rejected_wired(self, db, test_user, email_account):
         """APPLIED + REJECTED signal → transitions to REJECTED."""
@@ -327,20 +319,15 @@ class TestProcessEmailSignal:
         assert count == 0
         assert raw_email.linked_application_id is None
 
-    def test_ats_job_id_match_transitions_even_when_company_differs(
+    def test_ats_job_id_match_applied_signal_skipped(
         self, db, test_user, email_account
     ):
-        """ATS job ID match takes priority over company name — transitions even when company differs."""
+        """ATS job ID match finds app but APPLIED signal on IN_PROGRESS is skipped."""
         acme = _make_company(db, test_user.id, name="Acme Corp")
         app_with_id = _make_application(
             db, test_user.id, acme.id, ApplicationStatus.IN_PROGRESS,
             ats_job_id="Cashier_R2000648316",
             source_url="https://acme.wd5.myworkdayjobs.com/en-US/careers/job/Cashier_R2000648316",
-        )
-        # Different company — would NOT match via company name fallback
-        other_co = _make_company(db, test_user.id, name="Different Corp")
-        app_other = _make_application(
-            db, test_user.id, other_co.id, ApplicationStatus.IN_PROGRESS,
         )
 
         raw_email = _make_raw_email(
@@ -357,15 +344,13 @@ class TestProcessEmailSignal:
         process_email_signal(db, test_user.id, raw_email, classification)
 
         db.refresh(app_with_id)
-        db.refresh(app_other)
-        assert app_with_id.status == ApplicationStatus.APPLIED
-        assert app_other.status == ApplicationStatus.IN_PROGRESS
-        assert raw_email.linked_application_id == app_with_id.id
+        assert app_with_id.status == ApplicationStatus.IN_PROGRESS
+        assert raw_email.linked_application_id is None
 
-    def test_ats_job_id_falls_through_to_source_url_when_no_r_number(
+    def test_ats_job_id_falls_through_applied_signal_skipped(
         self, db, test_user, email_account
     ):
-        """No R-number in subject → falls through to source_url dedup."""
+        """No R-number in subject → company match found but APPLIED signal on IN_PROGRESS skipped."""
         company = _make_company(db, test_user.id)
         app = _make_application(
             db, test_user.id, company.id, ApplicationStatus.IN_PROGRESS,
@@ -387,13 +372,13 @@ class TestProcessEmailSignal:
         process_email_signal(db, test_user.id, raw_email, classification)
 
         db.refresh(app)
-        assert app.status == ApplicationStatus.APPLIED
-        assert raw_email.linked_application_id == app.id
+        assert app.status == ApplicationStatus.IN_PROGRESS
+        assert raw_email.linked_application_id is None
 
-    def test_ats_job_id_falls_through_to_company_when_no_match(
+    def test_ats_job_id_no_match_company_fallback_applied_skipped(
         self, db, test_user, email_account
     ):
-        """R-number in subject doesn't match any app → falls through to company name dedup."""
+        """R-number doesn't match → company fallback finds app but APPLIED on IN_PROGRESS skipped."""
         company = _make_company(db, test_user.id)
         app = _make_application(
             db, test_user.id, company.id, ApplicationStatus.IN_PROGRESS,
@@ -415,13 +400,13 @@ class TestProcessEmailSignal:
         process_email_signal(db, test_user.id, raw_email, classification)
 
         db.refresh(app)
-        assert app.status == ApplicationStatus.APPLIED
-        assert raw_email.linked_application_id == app.id
+        assert app.status == ApplicationStatus.IN_PROGRESS
+        assert raw_email.linked_application_id is None
 
-    def test_null_company_with_r_number_matches_via_ats_job_id(
+    def test_null_company_with_r_number_applied_skipped(
         self, db, test_user, email_account
     ):
-        """Gemini returns company=None but subject has R-number → still matches via ats_job_id."""
+        """Gemini returns company=None + R-number → match found but APPLIED on IN_PROGRESS skipped."""
         company = _make_company(db, test_user.id, name="Sdm Careers")
         app = _make_application(
             db, test_user.id, company.id, ApplicationStatus.IN_PROGRESS,
@@ -444,8 +429,8 @@ class TestProcessEmailSignal:
         process_email_signal(db, test_user.id, raw_email, classification)
 
         db.refresh(app)
-        assert app.status == ApplicationStatus.APPLIED
-        assert raw_email.linked_application_id == app.id
+        assert app.status == ApplicationStatus.IN_PROGRESS
+        assert raw_email.linked_application_id is None
 
     def test_null_company_without_r_number_is_no_op(
         self, db, test_user, email_account
@@ -475,17 +460,15 @@ class TestProcessEmailSignal:
 class TestWorkdayTenantMatching:
     """Tests for Priority 1: Workday tenant deduplication."""
 
-    def test_tenant_match_transitions_app(self, db, test_user, email_account):
-        """Sender tenant matches application workday_tenant even when company names differ."""
+    def test_tenant_match_applied_signal_skipped(self, db, test_user, email_account):
+        """Sender tenant matches but APPLIED signal on IN_PROGRESS is skipped."""
         company = _make_company(db, test_user.id, "Meredith")
         app = _make_application(
             db, test_user.id, company.id, ApplicationStatus.IN_PROGRESS,
             workday_tenant="meredith",
         )
 
-        # Sender is meredith@myworkday.com, but Gemini extracts "People Inc."
         raw_email = _make_raw_email(db, email_account)
-        # Override sender to Workday tenant address
         raw_email.sender = "meredith@myworkday.com"
         db.flush()
 
@@ -499,11 +482,11 @@ class TestWorkdayTenantMatching:
         process_email_signal(db, test_user.id, raw_email, classification)
 
         db.refresh(app)
-        assert app.status == ApplicationStatus.APPLIED
-        assert raw_email.linked_application_id == app.id
+        assert app.status == ApplicationStatus.IN_PROGRESS
+        assert raw_email.linked_application_id is None
 
-    def test_shared_sender_falls_through(self, db, test_user, email_account):
-        """Shared sender (noreply@myworkday.com) does not match via tenant — falls through."""
+    def test_shared_sender_applied_signal_skipped(self, db, test_user, email_account):
+        """Shared sender falls through to company match, but APPLIED on IN_PROGRESS is skipped."""
         company = _make_company(db, test_user.id, "Acme Corp")
         app = _make_application(
             db, test_user.id, company.id, ApplicationStatus.IN_PROGRESS,
@@ -514,7 +497,6 @@ class TestWorkdayTenantMatching:
         raw_email.sender = "noreply@myworkday.com"
         db.flush()
 
-        # Company name matches so Priority 3 (company name) should catch it
         classification = GeminiClassificationResult(
             company="Acme Corp",
             role="Engineer",
@@ -525,10 +507,10 @@ class TestWorkdayTenantMatching:
         process_email_signal(db, test_user.id, raw_email, classification)
 
         db.refresh(app)
-        assert app.status == ApplicationStatus.APPLIED
+        assert app.status == ApplicationStatus.IN_PROGRESS
 
-    def test_two_apps_same_tenant_falls_through(self, db, test_user, email_account):
-        """Two apps with same tenant — tenant match is ambiguous, falls through."""
+    def test_two_apps_same_tenant_applied_signal_skipped(self, db, test_user, email_account):
+        """Two apps with same tenant — Jaccard finds match but APPLIED on IN_PROGRESS skipped."""
         company = _make_company(db, test_user.id, "Meredith")
         app1 = _make_application(
             db, test_user.id, company.id, ApplicationStatus.IN_PROGRESS,
@@ -543,7 +525,6 @@ class TestWorkdayTenantMatching:
         raw_email.sender = "meredith@myworkday.com"
         db.flush()
 
-        # Company is different so Priority 3 won't match either
         classification = GeminiClassificationResult(
             company="People Inc.",
             role="Data Analyst",
@@ -553,13 +534,10 @@ class TestWorkdayTenantMatching:
 
         process_email_signal(db, test_user.id, raw_email, classification)
 
-        # Neither app should have transitioned (ambiguous tenant, no company match)
-        # But Jaccard might match app2 — "Data Analyst" == "Data Analyst" => Jaccard 1.0
-        # and only app2 matches, so it should transition
         db.refresh(app1)
         db.refresh(app2)
         assert app1.status == ApplicationStatus.IN_PROGRESS
-        assert app2.status == ApplicationStatus.APPLIED
+        assert app2.status == ApplicationStatus.IN_PROGRESS
 
     def test_tenant_match_for_interview_signal(self, db, test_user, email_account):
         """Tenant matching works for non-APPLIED signals (INTERVIEW)."""
@@ -591,8 +569,8 @@ class TestWorkdayTenantMatching:
 class TestJaccardSimilarity:
     """Tests for Priority 4: role token Jaccard similarity fallback."""
 
-    def test_jaccard_matches_similar_roles(self, db, test_user, email_account):
-        """Jaccard >= 0.7 on role tokens matches the right application."""
+    def test_jaccard_matches_similar_roles_applied_skipped(self, db, test_user, email_account):
+        """Jaccard >= 0.7 finds match but APPLIED signal on IN_PROGRESS is skipped."""
         company = _make_company(db, test_user.id, "Unknown Corp")
         app = _make_application(
             db, test_user.id, company.id, ApplicationStatus.IN_PROGRESS,
@@ -603,13 +581,6 @@ class TestJaccardSimilarity:
         raw_email.sender = "careers@example.com"
         db.flush()
 
-        # "Software Engineer Intern" tokens: {software, engineer, intern}
-        # "Software Engineering Intern" tokens: {software, engineering, intern}
-        # Jaccard = 2/4 = 0.5 — too low!
-        # Use a role that actually gives >= 0.7
-        # "Software Engineer Intern" vs "Software Engineer Intern 2026"
-        # tokens: {software, engineer, intern} vs {software, engineer, intern, 2026}
-        # Jaccard = 3/4 = 0.75 >= 0.7 ✓
         classification = GeminiClassificationResult(
             company="Nonexistent Co",
             role="Software Engineer Intern 2026",
@@ -620,7 +591,7 @@ class TestJaccardSimilarity:
         process_email_signal(db, test_user.id, raw_email, classification)
 
         db.refresh(app)
-        assert app.status == ApplicationStatus.APPLIED
+        assert app.status == ApplicationStatus.IN_PROGRESS
 
     def test_jaccard_below_threshold_no_match(self, db, test_user, email_account):
         """Jaccard < 0.7 — no match, no-op."""

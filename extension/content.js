@@ -136,6 +136,18 @@ function guessCompanyFromPage() {
   return titleFallback.substring(0, 255);
 }
 
+// ─── CACHED CAPTURE DATA ─────────────────────────────────────────────────────
+// Cache extraction results at load time (on the /job/{id} page). When Workday
+// SPA navigates to /apply/, the DOM changes but this content script stays alive.
+// background.js sends GET_CAPTURE_DATA to retrieve the cached snapshot.
+const _cachedCaptureData = {
+  company_name: guessCompanyFromPage(),
+  role: guessRoleFromPage(),
+  job_description: extractJobDescription(),
+  source_url: window.location.href,
+  ats_job_id: extractJobId(),
+};
+
 // ─── OVERLAY ──────────────────────────────────────────────────────────────────
 function alreadyShownForJob() {
   const jobId = extractJobId();
@@ -238,9 +250,12 @@ window.addEventListener("popstate", removeOverlayAndCancel);
 
 // Listen for HIDE_OVERLAY from background.js (triggered by chrome.tabs.onUpdated
 // when Workday SPA navigates to /apply/ via pushState).
-chrome.runtime.onMessage.addListener((message) => {
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "HIDE_OVERLAY") {
     removeOverlayAndCancel();
+  }
+  if (message.type === "GET_CAPTURE_DATA") {
+    sendResponse(_cachedCaptureData);
   }
 });
 

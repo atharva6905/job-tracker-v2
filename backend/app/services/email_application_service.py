@@ -43,11 +43,17 @@ def process_email_signal(
     user_id: UUID,
     raw_email: RawEmail,
     classification: GeminiClassificationResult,
+    *,
+    allow_applied_on_in_progress: bool = False,
 ) -> None:
     """
     Find an existing application matching the classified email and apply the
     appropriate status transition. If no matching application exists, this is
     a no-op.
+
+    allow_applied_on_in_progress: when False (default), IN_PROGRESS → APPLIED
+    is skipped because the extension handles this transition. Set to True for
+    replay_matched_emails which fast-forwards re-tracked applications.
     """
     signal = classification.signal
     company_name = classification.company
@@ -78,6 +84,21 @@ def process_email_signal(
 
     # STEP 2 — Apply transition or no-op
     if application:
+        # Extension handles IN_PROGRESS → APPLIED — skip unless replay allows it
+        if (
+            not allow_applied_on_in_progress
+            and application.status == ApplicationStatus.IN_PROGRESS
+            and target_status == ApplicationStatus.APPLIED
+        ):
+            _logger.info(
+                "APPLIED signal skipped — extension handles this transition",
+                extra={
+                    "action_taken": "applied_signal_skipped_extension_handles",
+                    "application_id": str(application.id),
+                    "user_id": str(user_id),
+                },
+            )
+            return
         _apply_transition(db, application, target_status, raw_email, user_id)
     else:
         # No matching active application found — no-op.
@@ -162,7 +183,10 @@ def replay_matched_emails(db: Session, application: Application) -> None:
             confidence=raw_email.gemini_confidence,
         )
         try:
-            process_email_signal(db, user_id, raw_email, classification)
+            process_email_signal(
+                db, user_id, raw_email, classification,
+                allow_applied_on_in_progress=True,
+            )
             replayed += 1
         except Exception:
             _logger.warning(

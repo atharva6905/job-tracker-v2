@@ -17,7 +17,14 @@ class ExtensionCaptureRequest(BaseModel):
     company_name: str = Field(max_length=255)
     role: str = Field(max_length=255)
     source_url: str = Field(max_length=2048)
-    job_description: str = Field(max_length=50000)
+    job_description: str = Field(default="", max_length=50000)
+    ats_job_id: str | None = Field(default=None, max_length=255)
+
+
+class ExtensionAppliedRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_url: str = Field(max_length=2048)
     ats_job_id: str | None = Field(default=None, max_length=255)
 
 
