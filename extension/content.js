@@ -173,20 +173,10 @@ function normalizeSourceUrl(url) {
 }
 
 // ─── OVERLAY ──────────────────────────────────────────────────────────────────
-function alreadyShownForJob() {
-  const jobId = extractJobId();
-  return jobId && sessionStorage.getItem(`jt_shown_${jobId}`) === "1";
-}
-
-function markShownForJob() {
-  const jobId = extractJobId();
-  if (jobId) sessionStorage.setItem(`jt_shown_${jobId}`, "1");
-}
-
+// Passive indicator — shows on every job page visit, auto-dismisses after 3s.
+// No sessionStorage dedup needed: the _currentJobId guard in tryInitForCurrentUrl()
+// prevents re-initialization for the same job within a single content script lifetime.
 function maybeShowOverlay() {
-  if (alreadyShownForJob()) return;
-  markShownForJob();
-
   const overlay = document.createElement("div");
   overlay.id = "jt-overlay";
   overlay.style.cssText = [
