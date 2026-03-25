@@ -217,15 +217,20 @@ function maybeShowOverlay() {
 function tryInitForCurrentUrl() {
   const pathname = window.location.pathname;
 
-  // On /apply/ or non-job pages, just clean up any existing overlay
+  // On /apply/ or non-job pages, clean up overlay and reset _currentJobId.
+  // Resetting _currentJobId is critical: without it, navigating back to the
+  // SAME job page after /apply/ would match the guard (jobId === _currentJobId)
+  // and silently skip re-extraction, leaving stale cached data.
   if (/\/apply(\/|$)/.test(pathname)) {
     removeOverlayAndCancel();
+    _currentJobId = null;
     return;
   }
 
   const isJobPage = /\/job\/[^/]/.test(pathname) || /\/details\/[^/]/.test(pathname);
   if (!isJobPage) {
     removeOverlayAndCancel();
+    _currentJobId = null;
     return;
   }
 

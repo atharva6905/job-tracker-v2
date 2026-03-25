@@ -112,8 +112,50 @@ async function waitForJD(jobKey, maxWaitMs = 2000, intervalMs = 200) {
 // ─── API CALL HELPER ─────────────────────────────────────────────────────────
 
 /**
+ * Notify the user that their session has expired by injecting an overlay
+ * into the active tab. Uses a longer dismiss timeout (8s) than normal
+ * tracking overlays so the user has time to read the message.
+ */
+function notifyAuthExpired() {
+  chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
+    if (!tab?.id) return;
+    chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: () => {
+        if (document.getElementById("jt-auth-expired")) return;
+        const el = document.createElement("div");
+        el.id = "jt-auth-expired";
+        el.style.cssText = [
+          "position:fixed",
+          "bottom:20px",
+          "right:20px",
+          "z-index:2147483647",
+          "background:#ffffff",
+          "border:1px solid #fca5a5",
+          "border-radius:12px",
+          "padding:12px 16px",
+          "box-shadow:0 8px 24px rgba(0,0,0,0.12)",
+          "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
+          "max-width:300px"
+        ].join(";");
+        el.innerHTML =
+          '<div style="display:flex;align-items:center;gap:8px;">' +
+            '<span style="font-size:14px;">&#9888;&#65039;</span>' +
+            '<p style="margin:0;font-weight:500;font-size:13px;color:#dc2626;">Session expired</p>' +
+          '</div>' +
+          '<p style="margin:4px 0 0;font-size:11px;color:#64748b;line-height:1.4;">' +
+            'Re-open the Job Tracker dashboard to reconnect.' +
+          '</p>';
+        document.body.appendChild(el);
+        setTimeout(() => el.remove(), 8000);
+      },
+    }).catch(() => {});
+  });
+}
+
+/**
  * Authenticated POST to the backend. Returns { success, data, error }.
- * Clears auth token on 401.
+ * Clears auth token on 401 and notifies the user.
  */
 async function apiCall(endpoint, payload) {
   const { auth_token } = await chrome.storage.session.get("auth_token");
@@ -132,6 +174,7 @@ async function apiCall(endpoint, payload) {
 
     if (response.status === 401) {
       await chrome.storage.session.remove("auth_token");
+      notifyAuthExpired();
       return { success: false, data: null, error: "token_expired" };
     }
 
