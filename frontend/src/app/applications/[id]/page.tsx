@@ -254,6 +254,13 @@ export default function ApplicationDetailPage() {
   }
 
   const structured = jobDescription?.structured_jd ?? null;
+  // Guard against all-empty structured data (e.g. from structuring empty raw_text)
+  const hasStructuredContent = structured && (
+    structured.summary ||
+    structured.responsibilities.length > 0 ||
+    structured.required_qualifications.length > 0 ||
+    structured.tech_stack.length > 0
+  );
 
   return (
     <div className="min-h-screen bg-muted/30">
@@ -374,7 +381,7 @@ export default function ApplicationDetailPage() {
                 <p className="mb-2 text-xs text-muted-foreground">
                   Captured at apply time ({new Date(jobDescription.captured_at).toLocaleString()})
                 </p>
-                {structured ? (
+                {hasStructuredContent ? (
                   <StructuredJDDisplay data={structured} />
                 ) : (
                   <>

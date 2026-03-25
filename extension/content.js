@@ -136,17 +136,40 @@ function guessCompanyFromPage() {
   return titleFallback.substring(0, 255);
 }
 
+// ─── URL NORMALIZATION ────────────────────────────────────────────────────────
+// Must match normalizeSourceUrl in background.js — strip query params, hash,
+// trailing slash so manual capture and auto-capture produce identical URLs.
+function normalizeSourceUrl(url) {
+  try {
+    const u = new URL(url);
+    let normalized = u.origin + u.pathname;
+    if (normalized.length > u.origin.length + 1 && normalized.endsWith("/")) {
+      normalized = normalized.slice(0, -1);
+    }
+    return normalized;
+  } catch {
+    return url;
+  }
+}
+
 // ─── CACHED CAPTURE DATA ─────────────────────────────────────────────────────
 // Cache extraction results at load time (on the /job/{id} page). When Workday
 // SPA navigates to /apply/, the DOM changes but this content script stays alive.
 // background.js sends GET_CAPTURE_DATA to retrieve the cached snapshot.
-const _cachedCaptureData = {
+// JD extraction is deferred — Workday loads content dynamically after initial
+// render, so extracting immediately at script load often returns empty text.
+let _cachedCaptureData = {
   company_name: guessCompanyFromPage(),
   role: guessRoleFromPage(),
-  job_description: extractJobDescription(),
-  source_url: window.location.href,
+  job_description: "",
+  source_url: normalizeSourceUrl(window.location.href),
   ats_job_id: extractJobId(),
 };
+
+// Defer JD extraction until dynamic content has loaded (same delay as overlay)
+setTimeout(() => {
+  _cachedCaptureData.job_description = extractJobDescription();
+}, 1500);
 
 // ─── OVERLAY ──────────────────────────────────────────────────────────────────
 function alreadyShownForJob() {
@@ -217,7 +240,7 @@ function maybeShowOverlay() {
       company_name: guessCompanyFromPage(),
       role: guessRoleFromPage(),
       job_description: extractJobDescription(),
-      source_url: window.location.href,
+      source_url: normalizeSourceUrl(window.location.href),
       ...(jobId && { ats_job_id: jobId })
     };
 

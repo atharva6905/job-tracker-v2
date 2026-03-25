@@ -229,6 +229,7 @@ def test_capture_rate_limit_at_61(client, auth_headers):
 
 
 def test_capture_with_empty_job_description(client, auth_headers, db):
+    """Empty job_description should create the app but NOT a JD record."""
     payload = {
         "company_name": "Auto Corp",
         "role": "Engineer",
@@ -244,8 +245,7 @@ def test_capture_with_empty_job_description(client, auth_headers, db):
     assert app.status == ApplicationStatus.IN_PROGRESS
 
     jd = db.scalar(select(JobDescription).where(JobDescription.application_id == app.id))
-    assert jd is not None
-    assert jd.raw_text == ""
+    assert jd is None
 
 
 # ---------------------------------------------------------------------------

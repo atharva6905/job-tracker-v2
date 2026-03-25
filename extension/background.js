@@ -7,6 +7,25 @@ const API_BASE = "https://job-tracker-v2-kappa.vercel.app/api";
 
 // ─── URL HELPERS ─────────────────────────────────────────────────────────────
 
+/**
+ * Normalize a source URL for dedup: strip query params, hash, trailing slash.
+ * Both content.js manual capture and background.js auto-capture must produce
+ * the same normalized URL for the same job posting.
+ */
+function normalizeSourceUrl(url) {
+  try {
+    const u = new URL(url);
+    let normalized = u.origin + u.pathname;
+    // Strip trailing slash (unless root "/")
+    if (normalized.length > u.origin.length + 1 && normalized.endsWith("/")) {
+      normalized = normalized.slice(0, -1);
+    }
+    return normalized;
+  } catch {
+    return url;
+  }
+}
+
 const APPLY_RE = /^https?:\/\/[^/]*\.(myworkdayjobs|myworkday|myworkdaysite)\.com\/.*\/job\/.*\/apply(\/|$)/;
 const COMPLETION_RE = /\/jobTasks\/completed\/application/;
 
@@ -135,7 +154,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 
     // Store tab state in chrome.storage.session (survives MV3 service worker restarts)
     const tabKey = `tab_${tabId}`;
-    chrome.storage.session.set({ [tabKey]: { jobId: info.jobId, sourceUrl: info.sourceUrl } });
+    chrome.storage.session.set({ [tabKey]: { jobId: info.jobId, sourceUrl: normalizeSourceUrl(info.sourceUrl) } });
 
     // Try to get full capture data from content script (may still be alive from /job/ page)
     chrome.tabs.sendMessage(tabId, { type: "GET_CAPTURE_DATA" })
@@ -145,7 +164,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
           company_name: captureData.company_name,
           role: captureData.role,
           job_description: captureData.job_description,
-          source_url: info.sourceUrl,
+          source_url: normalizeSourceUrl(info.sourceUrl),
           ats_job_id: captureData.ats_job_id || info.jobId,
         });
       })
@@ -154,7 +173,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
         await apiCall("/extension/capture", {
           company_name: companyFromUrl(url),
           role: roleFromUrl(info.jobId),
-          source_url: info.sourceUrl,
+          source_url: normalizeSourceUrl(info.sourceUrl),
           ats_job_id: info.jobId,
         });
       });

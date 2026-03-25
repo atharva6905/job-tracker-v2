@@ -18,6 +18,7 @@ from app.schemas.extension import (
 from app.services.company_service import find_or_create_company
 from app.services.email_application_service import replay_matched_emails
 from app.services.jd_structuring_service import structure_job_description
+from app.utils.url import normalize_source_url
 from app.utils.workday import extract_workday_tenant
 
 router = APIRouter(prefix="/extension", tags=["extension"])
@@ -33,13 +34,14 @@ def capture_application(
     db: Session = Depends(get_db),
 ):
     company = find_or_create_company(db, current_user.id, body.company_name)
+    normalized_url = normalize_source_url(body.source_url)
 
     # Dedup: if an IN_PROGRESS application exists for this (user, source_url),
     # update its job description and return it — don't create a duplicate.
     existing = db.scalar(
         select(Application).where(
             Application.user_id == current_user.id,
-            Application.source_url == body.source_url,
+            Application.source_url == normalized_url,
             Application.status == ApplicationStatus.IN_PROGRESS,
         )
     )
@@ -49,14 +51,15 @@ def capture_application(
         existing.role = body.role
         existing.ats_job_id = body.ats_job_id
         existing.workday_tenant = extract_workday_tenant(body.source_url)
-        jd = db.scalar(
-            select(JobDescription).where(JobDescription.application_id == existing.id)
-        )
-        if jd:
-            jd.raw_text = body.job_description
-            jd.captured_at = datetime.now(timezone.utc)
-        else:
-            db.add(JobDescription(application_id=existing.id, raw_text=body.job_description))
+        if body.job_description.strip():
+            jd = db.scalar(
+                select(JobDescription).where(JobDescription.application_id == existing.id)
+            )
+            if jd:
+                jd.raw_text = body.job_description
+                jd.captured_at = datetime.now(timezone.utc)
+            else:
+                db.add(JobDescription(application_id=existing.id, raw_text=body.job_description))
         db.commit()
         return ExtensionCaptureResponse(
             application_id=existing.id,
@@ -70,17 +73,20 @@ def capture_application(
         company_id=company.id,
         role=body.role,
         status=ApplicationStatus.IN_PROGRESS,
-        source_url=body.source_url,
+        source_url=normalized_url,
         ats_job_id=body.ats_job_id,
         workday_tenant=extract_workday_tenant(body.source_url),
     )
     db.add(application)
     db.flush()
-    jd = JobDescription(application_id=application.id, raw_text=body.job_description)
-    db.add(jd)
+    jd = None
+    if body.job_description.strip():
+        jd = JobDescription(application_id=application.id, raw_text=body.job_description)
+        db.add(jd)
     db.commit()
-    db.refresh(jd)
-    background_tasks.add_task(structure_job_description, db, str(jd.id))
+    if jd:
+        db.refresh(jd)
+        background_tasks.add_task(structure_job_description, db, str(jd.id))
     replay_matched_emails(db, application)
     db.refresh(application)
     return ExtensionCaptureResponse(
@@ -102,7 +108,7 @@ def mark_applied(
     application = db.scalar(
         select(Application).where(
             Application.user_id == current_user.id,
-            Application.source_url == body.source_url,
+            Application.source_url == normalize_source_url(body.source_url),
             Application.status == ApplicationStatus.IN_PROGRESS,
         )
     )
