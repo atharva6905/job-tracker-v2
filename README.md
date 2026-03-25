@@ -1,6 +1,6 @@
 # job-tracker-v2
 
-A job application tracker that requires zero manual entry. A Chrome extension detects when you're filling out an application, captures the job description, and creates an `IN_PROGRESS` record. Confirmation emails automatically advance the status to `APPLIED`. Subsequent emails (interview invites, rejections, offers) continue to advance status automatically.
+A job application tracker that requires zero manual entry. A Chrome extension auto-captures job descriptions from Workday pages when you click Apply, creating an `IN_PROGRESS` record. When you complete the application, the extension marks it `APPLIED`. Subsequent employer emails (interview invites, rejections, offers) are classified by Gemini and automatically advance the status.
 
 ## Project Structure
 
@@ -8,13 +8,10 @@ A job application tracker that requires zero manual entry. A Chrome extension de
 job-tracker-v2/
 ├── backend/          # FastAPI — API, email polling, Gemini classification
 ├── frontend/         # Next.js (App Router) — dashboard UI
-├── extension/        # Chrome Extension MV3 — captures JDs at apply time
+├── extension/        # Chrome Extension MV3 — Workday auto-capture
 ├── .github/
 │   └── workflows/
 │       └── ci.yml    # Lint, audit, migrate, test
-├── PRD.md
-├── BLUEPRINT.md
-├── CLAUDE.md
 └── SECURITY.md
 ```
 
@@ -108,9 +105,11 @@ Then restart the FastAPI server (`uvicorn app.main:app --reload`).
 ### Step 6 — Verify the Flow
 
 1. Log in at `http://localhost:3000`
-2. Navigate to a Greenhouse job page (e.g. `boards.greenhouse.io/...`)
-3. The **"Track this application?"** overlay should appear after ~1.5 seconds
-4. Click **Track it** — then check your dashboard
+2. Navigate to a Workday job page (e.g. `bmo.wd3.myworkdayjobs.com/en-US/External/details/...`)
+3. A passive **"Job Tracker active"** overlay should appear after ~1.5 seconds and auto-dismiss after 3s
+4. Click **Apply** on the job page — the extension auto-captures and shows **"Tracking this application..."**
+5. Complete the application — on the completion page the extension shows a green **"Applied ✓"** overlay
+6. Check your dashboard — the application should appear as `IN_PROGRESS` (then `APPLIED` after step 5)
 
 > **Session note:** `chrome.storage.session` is cleared on browser restart. After restarting Chrome, open the web app once to re-send the JWT to the extension.
 
