@@ -251,30 +251,37 @@ function tryInitForCurrentUrl() {
     jdTimeoutId = null;
   }
 
-  // Initialize capture data with URL-derived fields only. Company, role, and JD
-  // are deferred — on SPA navigation the DOM still shows the previous page when
-  // the URL polling detects the change. Extracting immediately reads stale content.
+  // Two-phase session storage write:
+  //
+  // Phase 1 (immediate): Write company, role, source_url, ats_job_id now.
+  // If the user clicks Apply before the JD timer fires, background.js still
+  // gets the core capture data. JD will be empty — backend skips creating a
+  // JD record for empty strings, which is acceptable.
+  //
+  // Phase 2 (1.5s defer): Overwrite with full data including job_description.
+  // Workday renders content asynchronously — JD extraction needs the delay.
+  // If background.js reads after phase 2, it gets everything.
+  const jobKey = `job_${jobId}`;
+
   _cachedCaptureData = {
-    company_name: "",
-    role: "",
+    company_name: guessCompanyFromPage(),
+    role: guessRoleFromPage(),
     job_description: "",
     source_url: normalizeSourceUrl(window.location.href),
     ats_job_id: jobId,
   };
+  chrome.storage.session.set({ [jobKey]: { ..._cachedCaptureData } });
 
   console.log("[job-tracker-v2] initialized for job:", jobId, _cachedCaptureData.source_url);
 
-  // Defer ALL DOM extraction until dynamic content has loaded (1.5s).
-  // Workday renders content asynchronously after pushState — company name, role,
-  // and JD are all unavailable until the new page finishes rendering.
-  // Persist to chrome.storage.session so background.js can read it on /apply/.
+  // Phase 2: overwrite with JD + re-extracted company/role after DOM settles
   jdTimeoutId = setTimeout(() => {
     jdTimeoutId = null;
     _cachedCaptureData.company_name = guessCompanyFromPage();
     _cachedCaptureData.role = guessRoleFromPage();
     _cachedCaptureData.job_description = extractJobDescription();
-    chrome.storage.session.set({ [`job_${jobId}`]: { ..._cachedCaptureData } });
-    console.log("[job-tracker-v2] cached to session storage:", `job_${jobId}`);
+    chrome.storage.session.set({ [jobKey]: { ..._cachedCaptureData } });
+    console.log("[job-tracker-v2] cached to session storage:", jobKey);
   }, 1500);
 
   // Show overlay after DOM settles
