@@ -251,10 +251,12 @@ function tryInitForCurrentUrl() {
     jdTimeoutId = null;
   }
 
-  // Extract capture data for this job
+  // Initialize capture data with URL-derived fields only. Company, role, and JD
+  // are deferred — on SPA navigation the DOM still shows the previous page when
+  // the URL polling detects the change. Extracting immediately reads stale content.
   _cachedCaptureData = {
-    company_name: guessCompanyFromPage(),
-    role: guessRoleFromPage(),
+    company_name: "",
+    role: "",
     job_description: "",
     source_url: normalizeSourceUrl(window.location.href),
     ats_job_id: jobId,
@@ -262,11 +264,14 @@ function tryInitForCurrentUrl() {
 
   console.log("[job-tracker-v2] initialized for job:", jobId, _cachedCaptureData.source_url);
 
-  // Defer JD extraction until dynamic content has loaded.
-  // Once extracted, persist to chrome.storage.session so background.js can read it
-  // even if this content script becomes unreachable after SPA navigation to /apply/.
+  // Defer ALL DOM extraction until dynamic content has loaded (1.5s).
+  // Workday renders content asynchronously after pushState — company name, role,
+  // and JD are all unavailable until the new page finishes rendering.
+  // Persist to chrome.storage.session so background.js can read it on /apply/.
   jdTimeoutId = setTimeout(() => {
     jdTimeoutId = null;
+    _cachedCaptureData.company_name = guessCompanyFromPage();
+    _cachedCaptureData.role = guessRoleFromPage();
     _cachedCaptureData.job_description = extractJobDescription();
     chrome.storage.session.set({ [`job_${jobId}`]: { ..._cachedCaptureData } });
     console.log("[job-tracker-v2] cached to session storage:", `job_${jobId}`);
