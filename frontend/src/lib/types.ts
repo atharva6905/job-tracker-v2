@@ -27,11 +27,25 @@ export interface Company {
   created_at: string;
 }
 
+export interface StructuredJD {
+  summary: string;
+  responsibilities: string[];
+  required_qualifications: string[];
+  preferred_qualifications: string[];
+  tech_stack: string[];
+  compensation: string | null;
+  application_deadline: string | null;
+  location: string | null;
+  work_model: string | null;
+  company_overview: string | null;
+}
+
 export interface JobDescription {
   id: string;
   application_id: string;
   raw_text: string;
   captured_at: string;
+  structured_jd: StructuredJD | null;
 }
 
 export interface RawEmail {

@@ -2,7 +2,7 @@ from datetime import date
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from sqlalchemy import asc, nullslast, select
 from sqlalchemy.orm import Session
 
@@ -21,6 +21,7 @@ from app.schemas.applications import (
 )
 from app.schemas.raw_email import RawEmailResponse
 from app.services.application_service import apply_status_transition
+from app.services.jd_structuring_service import structure_job_description
 
 router = APIRouter(prefix="/applications", tags=["applications"])
 
@@ -168,6 +169,34 @@ def get_application_emails(
         .order_by(nullslast(asc(RawEmail.received_at)))
     ).all()
     return emails
+
+
+@router.post("/{application_id}/structure-jd", status_code=202)
+@limiter.limit("10/minute")
+def structure_jd(
+    request: Request,
+    application_id: UUID,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    application = db.scalar(
+        select(Application).where(
+            Application.id == application_id,
+            Application.user_id == current_user.id,
+        )
+    )
+    if not application:
+        raise HTTPException(status_code=404)
+    jd = db.scalar(
+        select(JobDescription).where(
+            JobDescription.application_id == application_id
+        )
+    )
+    if not jd:
+        raise HTTPException(status_code=404, detail="No job description found")
+    background_tasks.add_task(structure_job_description, db, str(jd.id))
+    return {"detail": "Structuring queued"}
 
 
 @router.delete("/{application_id}", status_code=204)

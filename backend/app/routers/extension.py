@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -13,6 +13,7 @@ from app.models.user import User
 from app.schemas.extension import ExtensionCaptureRequest, ExtensionCaptureResponse
 from app.services.company_service import find_or_create_company
 from app.services.email_application_service import replay_matched_emails
+from app.services.jd_structuring_service import structure_job_description
 from app.utils.workday import extract_workday_tenant
 
 router = APIRouter(prefix="/extension", tags=["extension"])
@@ -23,6 +24,7 @@ router = APIRouter(prefix="/extension", tags=["extension"])
 def capture_application(
     request: Request,
     body: ExtensionCaptureRequest,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -70,8 +72,11 @@ def capture_application(
     )
     db.add(application)
     db.flush()
-    db.add(JobDescription(application_id=application.id, raw_text=body.job_description))
+    jd = JobDescription(application_id=application.id, raw_text=body.job_description)
+    db.add(jd)
     db.commit()
+    db.refresh(jd)
+    background_tasks.add_task(structure_job_description, db, str(jd.id))
     replay_matched_emails(db, application)
     db.refresh(application)
     return ExtensionCaptureResponse(

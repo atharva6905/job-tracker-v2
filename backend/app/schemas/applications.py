@@ -45,3 +45,4 @@ class JobDescriptionResponse(BaseModel):
     application_id: UUID
     raw_text: str
     captured_at: datetime
+    structured_jd: dict | None = None

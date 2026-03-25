@@ -65,6 +65,8 @@ function extractJobDescription() {
       if (forbiddenSet.has(el)) return false;
       // Exclude if any ancestor is a form field container
       if (el.closest(FORBIDDEN)) return false;
+      // Exclude elements inside our own overlay/marker (id starts with "jt-" or "job-tracker-v2-")
+      if (el.closest('[id^="jt-"], [id^="job-tracker-v2-"]')) return false;
       return true;
     });
 
