@@ -854,3 +854,191 @@ class TestTenantFineGate:
         # Retry loop should fire process_email_signal via tenant bypass
         mock_process.assert_called_once()
         wrapped.close.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# R-number fine gate bypass
+# ---------------------------------------------------------------------------
+
+
+class TestRNumberFineGate:
+    """Tests for R-number (ats_job_id) fine gate bypass in the poll worker."""
+
+    def test_fine_gate_passes_on_r_number_match(self, db, test_user):
+        """Email with R-number in subject bypasses fine gate even when company doesn't match."""
+        from app.models.application import Application, ApplicationStatus
+        from app.models.company import Company
+        from app.utils.company import normalize_company_name
+
+        account = _make_account(db, test_user)
+
+        # Active app with ats_job_id containing an R-number
+        company = Company(
+            user_id=test_user.id,
+            name="Acme Corp",
+            normalized_name=normalize_company_name("Acme Corp"),
+        )
+        db.add(company)
+        db.flush()
+        db.add(Application(
+            user_id=test_user.id,
+            company_id=company.id,
+            role="Engineer",
+            status=ApplicationStatus.APPLIED,
+            ats_job_id="R2000648316",
+        ))
+        db.flush()
+
+        # Gemini returns a company that is NOT in active_companies
+        r_number_classification = GeminiClassificationResult(
+            company="Unknown HR Platform",
+            role="Software Engineer",
+            signal="INTERVIEW",
+            confidence=0.92,
+        )
+
+        msg = {
+            "id": "msg_rnumber_001",
+            "snippet": "Interview scheduled...",
+            "payload": {
+                "headers": [
+                    {"name": "Subject", "value": "Interview for R2000648316 — Software Engineer"},
+                    {"name": "From", "value": "no-reply@greenhouse.io"},
+                    {"name": "Date", "value": "Thu, 18 Mar 2026 10:00:00 +0000"},
+                ]
+            },
+        }
+
+        mock_process = MagicMock()
+        wrapped = MagicMock(wraps=db)
+        wrapped.close = MagicMock()
+
+        from app.jobs.poll_job import poll_gmail_account
+
+        with (
+            patch("app.jobs.poll_job.SessionLocal", return_value=wrapped),
+            patch("app.jobs.poll_job.classify_email", return_value=r_number_classification),
+            patch("app.jobs.poll_job.process_email_signal", mock_process),
+            patch(
+                "app.jobs.poll_job._load_active_company_names",
+                return_value={"acme"},  # "unknown hr platform" is NOT in this set
+            ),
+            patch(
+                "app.jobs.poll_job._load_active_workday_tenants",
+                return_value=set(),
+            ),
+        ):
+            poll_gmail_account(str(account.id), gmail_client=MockGmailClient(messages=[msg]))
+
+        # Email should be stored and process_email_signal called (fine gate bypassed via R-number)
+        row = db.scalar(select(RawEmail).where(RawEmail.gmail_message_id == "msg_rnumber_001"))
+        assert row is not None
+        assert row.gemini_signal == "INTERVIEW"
+        mock_process.assert_called_once()
+        wrapped.close.assert_called_once()
+
+    def test_parse_error_retry_with_r_number_match(self, db, test_user):
+        """PARSE_ERROR retry: R-number in subject matches active app → process_email_signal called."""
+        from app.models.application import Application, ApplicationStatus
+        from app.models.company import Company
+        from app.utils.company import normalize_company_name
+
+        account = _make_account(db, test_user)
+
+        company = Company(
+            user_id=test_user.id,
+            name="Acme Corp",
+            normalized_name=normalize_company_name("Acme Corp"),
+        )
+        db.add(company)
+        db.flush()
+        db.add(Application(
+            user_id=test_user.id,
+            company_id=company.id,
+            role="Engineer",
+            status=ApplicationStatus.IN_PROGRESS,
+            ats_job_id="R2000648316",
+        ))
+        db.flush()
+
+        # Pre-seed a PARSE_ERROR email whose subject contains the R-number
+        existing = RawEmail(
+            email_account_id=account.id,
+            gmail_message_id="msg_retry_rnum_1",
+            subject="Update for R2000648316",
+            sender="no-reply@greenhouse.io",
+            received_at=datetime.now(timezone.utc),
+            body_snippet="We wanted to follow up...",
+            gemini_signal="PARSE_ERROR",
+            gemini_confidence=0.0,
+        )
+        db.add(existing)
+        db.flush()
+
+        retry_classification = GeminiClassificationResult(
+            company="Unknown HR",
+            role="Software Engineer",
+            signal="INTERVIEW",
+            confidence=0.90,
+        )
+
+        mock_process = MagicMock()
+        wrapped = MagicMock(wraps=db)
+        wrapped.close = MagicMock()
+
+        from app.jobs.poll_job import poll_gmail_account
+
+        with (
+            patch("app.jobs.poll_job.SessionLocal", return_value=wrapped),
+            patch("app.jobs.poll_job.classify_email", return_value=retry_classification),
+            patch("app.jobs.poll_job.process_email_signal", mock_process),
+            patch(
+                "app.jobs.poll_job._load_active_company_names",
+                return_value={"acme"},  # "unknown hr" not in this set
+            ),
+            patch(
+                "app.jobs.poll_job._load_active_workday_tenants",
+                return_value=set(),
+            ),
+        ):
+            poll_gmail_account(str(account.id), gmail_client=MockGmailClient(messages=[]))
+
+        mock_process.assert_called_once()
+        wrapped.close.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Error client — poll worker handles Gmail API errors gracefully
+# ---------------------------------------------------------------------------
+
+
+class TestGmailClientErrors:
+    """Verify the poll worker survives Gmail client errors without crashing."""
+
+    def test_gmail_api_error_logged_not_raised(self, db, test_user):
+        """When GmailClient raises, poll_gmail_account logs the error and returns."""
+        from app.utils.gmail_client import ErrorGmailClient
+
+        account = _make_account(db, test_user)
+        error_client = ErrorGmailClient(Exception("Token has been expired or revoked"))
+
+        wrapped = MagicMock(wraps=db)
+        wrapped.close = MagicMock()
+
+        from app.jobs.poll_job import poll_gmail_account
+
+        with (
+            patch("app.jobs.poll_job.SessionLocal", return_value=wrapped),
+            patch(
+                "app.jobs.poll_job._load_active_company_names",
+                return_value={"test company"},
+            ),
+            patch(
+                "app.jobs.poll_job._load_active_workday_tenants",
+                return_value=set(),
+            ),
+        ):
+            # Should not raise — error is caught by the top-level except in poll_gmail_account
+            poll_gmail_account(str(account.id), gmail_client=error_client)
+
+        wrapped.close.assert_called_once()

@@ -56,3 +56,18 @@ class MockGmailClient(GmailClientInterface):
 
     def get_message_detail(self, message_id: str) -> dict:
         return next(m for m in self.messages if m["id"] == message_id)
+
+
+class ErrorGmailClient(GmailClientInterface):
+    """Mock client that raises on every call — simulates token-expired or rate-limit errors."""
+
+    def __init__(self, error: Exception):
+        self._error = error
+
+    def get_messages_since(
+        self, account_id: str, since_timestamp: datetime, page_token=None
+    ) -> dict:
+        raise self._error
+
+    def get_message_detail(self, message_id: str) -> dict:
+        raise self._error
