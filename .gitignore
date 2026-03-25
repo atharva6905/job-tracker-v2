@@ -8,6 +8,8 @@
 backend/.env
 frontend/.env.local
 frontend/.env.production
+**/workday_cookies*.json
+**/extract_cookies.py
 
 # =============================================================================
 # Planning / AI build docs — internal tooling, not for public repo
@@ -101,3 +103,4 @@ docker-compose.override.yml
 # Alembic — keep versions/ tracked, ignore temp files
 # =============================================================================
 alembic/versions/*.pyc
+.gstack/
