@@ -130,16 +130,9 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
   }
 });
 
-// Listen for capture requests from content.js
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === "CAPTURE_APPLICATION") {
-    (async () => {
-      const result = await apiCall("/extension/capture", message.payload);
-      sendResponse(result);
-    })();
-    return true; // keep channel open for async response
-  }
-});
+// No internal message listeners — auto-capture is handled entirely by
+// tabs.onUpdated detecting /apply/ navigation. The "Track it" button has
+// been removed; content.js caches data to chrome.storage.session instead.
 
 // ─── TAB NAVIGATION LISTENER ────────────────────────────────────────────────
 
@@ -152,31 +145,51 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
     const info = extractJobInfoFromUrl(url);
     if (!info) return;
 
-    // Store tab state in chrome.storage.session (survives MV3 service worker restarts)
-    const tabKey = `tab_${tabId}`;
-    chrome.storage.session.set({ [tabKey]: { jobId: info.jobId, sourceUrl: normalizeSourceUrl(info.sourceUrl) } });
+    const normalizedSource = normalizeSourceUrl(info.sourceUrl);
 
-    // Try to get full capture data from content script (may still be alive from /job/ page)
-    chrome.tabs.sendMessage(tabId, { type: "GET_CAPTURE_DATA" })
-      .then(async (captureData) => {
-        // Content script responded — use cached data with the correct source_url
+    // Store tab state for completion detection (survives MV3 service worker restarts)
+    const tabKey = `tab_${tabId}`;
+    chrome.storage.session.set({ [tabKey]: { jobId: info.jobId, sourceUrl: normalizedSource } });
+
+    // Attempt to read rich data from chrome.storage.session (written by content.js
+    // on the /job/{id} page). This is more reliable than messaging the content
+    // script, which may be unreachable after SPA navigation.
+    const jobKey = `job_${info.jobId}`;
+    chrome.storage.session.get(jobKey).then(async (stored) => {
+      const cached = stored[jobKey];
+      if (cached && cached.company_name && cached.job_description) {
         await apiCall("/extension/capture", {
-          company_name: captureData.company_name,
-          role: captureData.role,
-          job_description: captureData.job_description,
-          source_url: normalizeSourceUrl(info.sourceUrl),
-          ats_job_id: captureData.ats_job_id || info.jobId,
+          company_name: cached.company_name,
+          role: cached.role,
+          job_description: cached.job_description,
+          source_url: normalizedSource,
+          ats_job_id: cached.ats_job_id || info.jobId,
         });
-      })
-      .catch(async () => {
-        // Content script not available — fall back to URL parsing
-        await apiCall("/extension/capture", {
-          company_name: companyFromUrl(url),
-          role: roleFromUrl(info.jobId),
-          source_url: normalizeSourceUrl(info.sourceUrl),
-          ats_job_id: info.jobId,
+        chrome.storage.session.remove(jobKey);
+        return;
+      }
+
+      // Fallback: message the content script (may still be alive from /job/ page)
+      chrome.tabs.sendMessage(tabId, { type: "GET_CAPTURE_DATA" })
+        .then(async (captureData) => {
+          await apiCall("/extension/capture", {
+            company_name: captureData.company_name,
+            role: captureData.role,
+            job_description: captureData.job_description,
+            source_url: normalizedSource,
+            ats_job_id: captureData.ats_job_id || info.jobId,
+          });
+        })
+        .catch(async () => {
+          // Last resort: extract from URL only (loses JD)
+          await apiCall("/extension/capture", {
+            company_name: companyFromUrl(url),
+            role: roleFromUrl(info.jobId),
+            source_url: normalizedSource,
+            ats_job_id: info.jobId,
+          });
         });
-      });
+    });
 
     // Hide overlay (existing behavior)
     chrome.tabs.sendMessage(tabId, { type: "HIDE_OVERLAY" }).catch(() => {});

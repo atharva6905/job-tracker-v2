@@ -65,7 +65,11 @@ export default function DashboardPage() {
   const formatDate = (app: Application) => {
     const dateStr = app.status === "IN_PROGRESS" ? app.created_at : app.date_applied;
     if (!dateStr) return null;
-    return new Date(dateStr).toLocaleDateString();
+    // Date-only strings (YYYY-MM-DD, length 10) are parsed as UTC midnight by JS.
+    // Appending T00:00:00 (no Z) forces local-time interpretation, preventing
+    // off-by-one display in timezones behind UTC.
+    const d = dateStr.length === 10 ? new Date(dateStr + "T00:00:00") : new Date(dateStr);
+    return d.toLocaleDateString();
   };
 
   return (

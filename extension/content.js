@@ -166,9 +166,15 @@ let _cachedCaptureData = {
   ats_job_id: extractJobId(),
 };
 
-// Defer JD extraction until dynamic content has loaded (same delay as overlay)
+// Defer JD extraction until dynamic content has loaded (same delay as overlay).
+// Once extracted, persist to chrome.storage.session so background.js can read it
+// even if this content script becomes unreachable after SPA navigation to /apply/.
 setTimeout(() => {
   _cachedCaptureData.job_description = extractJobDescription();
+  const jobId = extractJobId();
+  if (jobId) {
+    chrome.storage.session.set({ [`job_${jobId}`]: { ..._cachedCaptureData } });
+  }
 }, 1500);
 
 // ─── OVERLAY ──────────────────────────────────────────────────────────────────
@@ -192,80 +198,32 @@ function maybeShowOverlay() {
     "position:fixed",
     "bottom:20px",
     "right:20px",
-    "z-index:2147483647", // max z-index — ensures overlay appears above ATS UI
+    "z-index:2147483647",
     "background:#ffffff",
     "border:1px solid #e2e8f0",
     "border-radius:12px",
-    "padding:16px",
+    "padding:12px 16px",
     "box-shadow:0 8px 24px rgba(0,0,0,0.12)",
     "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
-    "max-width:300px",
-    "min-width:240px"
+    "max-width:260px"
   ].join(";");
 
+  // Passive indicator — no buttons, no user interaction required.
+  // Auto-capture fires when the user navigates to /apply/.
   overlay.innerHTML = `
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-      <span style="font-size:16px;">📋</span>
-      <p style="margin:0;font-weight:600;font-size:14px;color:#0f172a;">Track this application?</p>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span style="font-size:14px;">&#9989;</span>
+      <p style="margin:0;font-weight:500;font-size:13px;color:#0f172a;">Job Tracker active</p>
     </div>
-    <p style="margin:0 0 12px;font-size:12px;color:#64748b;line-height:1.4;">
-      job-tracker-v2 will save this to your dashboard automatically.
+    <p style="margin:4px 0 0;font-size:11px;color:#64748b;line-height:1.4;">
+      Will auto-track when you apply.
     </p>
-    <div style="display:flex;gap:8px;">
-      <button id="jt-confirm" style="flex:1;background:#3b82f6;color:#fff;border:none;border-radius:6px;padding:8px 12px;cursor:pointer;font-size:13px;font-weight:500;">
-        Track it
-      </button>
-      <button id="jt-dismiss" style="flex:1;background:#f1f5f9;color:#475569;border:none;border-radius:6px;padding:8px 12px;cursor:pointer;font-size:13px;">
-        Dismiss
-      </button>
-    </div>
-    <p id="jt-status" style="margin:10px 0 0;font-size:12px;color:#64748b;min-height:16px;"></p>
   `;
 
   document.body.appendChild(overlay);
 
-  document.getElementById("jt-dismiss").onclick = () => overlay.remove();
-
-  document.getElementById("jt-confirm").onclick = () => {
-    const statusEl = document.getElementById("jt-status");
-    statusEl.textContent = "Saving\u2026";
-    statusEl.style.color = "#64748b";
-
-    // Disable buttons to prevent double-submit
-    document.getElementById("jt-confirm").disabled = true;
-    document.getElementById("jt-dismiss").disabled = true;
-
-    const jobId = extractJobId();
-    const payload = {
-      company_name: guessCompanyFromPage(),
-      role: guessRoleFromPage(),
-      job_description: extractJobDescription(),
-      source_url: normalizeSourceUrl(window.location.href),
-      ...(jobId && { ats_job_id: jobId })
-    };
-
-    chrome.runtime.sendMessage({ type: "CAPTURE_APPLICATION", payload }, (response) => {
-      if (chrome.runtime.lastError) {
-        statusEl.textContent = "Extension error.";
-        statusEl.style.color = "#ef4444";
-      } else if (response?.error === "token_expired") {
-        statusEl.textContent = "Session expired.";
-        statusEl.style.color = "#f59e0b";
-      } else if (response?.error === "not_authenticated") {
-        statusEl.textContent = "Log in first.";
-        statusEl.style.color = "#f59e0b";
-      } else if (response?.success) {
-        statusEl.textContent = "Saved \u2713";
-        statusEl.style.color = "#10b981";
-      } else {
-        statusEl.textContent = `Error: ${response?.error || "unknown"}`;
-        statusEl.style.color = "#ef4444";
-      }
-      // Always remove overlay after brief status flash — prevents DOM persistence
-      // across Workday SPA navigation (pushState doesn't reinject content scripts).
-      overlayTimeoutId = setTimeout(() => { overlay.remove(); overlayTimeoutId = null; }, 1500);
-    });
-  };
+  // Auto-dismiss after 3 seconds
+  overlayTimeoutId = setTimeout(() => { overlay.remove(); overlayTimeoutId = null; }, 3000);
 }
 
 // Clean up overlay on browser back/forward navigation.

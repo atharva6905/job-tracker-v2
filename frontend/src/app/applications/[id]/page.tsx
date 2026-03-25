@@ -153,6 +153,7 @@ export default function ApplicationDetailPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [structuring, setStructuring] = useState(false);
+  const [pollingForStructure, setPollingForStructure] = useState(false);
 
   useEffect(() => {
     if (authLoading || !user) return;
@@ -178,6 +179,43 @@ export default function ApplicationDetailPage() {
     }
     load();
   }, [authLoading, user, params.id]);
+
+  // Auto-poll for structured JD on recently created applications
+  useEffect(() => {
+    if (!application || !jobDescription) return;
+    if (jobDescription.structured_jd) return;
+
+    const createdAt = new Date(application.created_at).getTime();
+    const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
+    if (createdAt < fiveMinutesAgo) return;
+
+    setPollingForStructure(true);
+    let attempts = 0;
+    const maxAttempts = 10;
+
+    const interval = setInterval(async () => {
+      attempts++;
+      try {
+        const jd = await fetchAPI<JobDescription | null>(
+          `/applications/${params.id}/job-description`
+        );
+        if (jd?.structured_jd) {
+          setJobDescription(jd);
+          setPollingForStructure(false);
+          clearInterval(interval);
+        } else if (attempts >= maxAttempts) {
+          setPollingForStructure(false);
+          clearInterval(interval);
+        }
+      } catch {
+        setPollingForStructure(false);
+        clearInterval(interval);
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [application?.id, jobDescription?.id, jobDescription?.structured_jd]);
 
   const handleStatusChange = async (newStatus: string) => {
     if (!application || updating) return;
@@ -216,19 +254,30 @@ export default function ApplicationDetailPage() {
       await fetchAPI(`/applications/${params.id}/structure-jd`, {
         method: "POST",
       });
-      // Poll for the result after a short delay (background task)
-      setTimeout(async () => {
+      // Poll every 3s for up to 30s (10 attempts)
+      let attempts = 0;
+      const maxAttempts = 10;
+      const interval = setInterval(async () => {
+        attempts++;
         try {
           const jd = await fetchAPI<JobDescription | null>(
             `/applications/${params.id}/job-description`
           );
-          if (jd) setJobDescription(jd);
+          if (jd?.structured_jd) {
+            setJobDescription(jd);
+            setStructuring(false);
+            clearInterval(interval);
+          } else if (attempts >= maxAttempts) {
+            // Timeout — fall back to raw text with retry button
+            if (jd) setJobDescription(jd);
+            setStructuring(false);
+            clearInterval(interval);
+          }
         } catch {
-          // ignore
-        } finally {
           setStructuring(false);
+          clearInterval(interval);
         }
-      }, 5000);
+      }, 3000);
     } catch {
       setStructuring(false);
     }
@@ -306,7 +355,7 @@ export default function ApplicationDetailPage() {
                   <p className="font-medium text-muted-foreground">
                     Date Applied
                   </p>
-                  <p>{new Date(application.date_applied).toLocaleDateString()}</p>
+                  <p>{new Date(application.date_applied + "T00:00:00").toLocaleDateString()}</p>
                 </div>
               )}
               <div>
@@ -383,6 +432,17 @@ export default function ApplicationDetailPage() {
                 </p>
                 {hasStructuredContent ? (
                   <StructuredJDDisplay data={structured} />
+                ) : pollingForStructure || structuring ? (
+                  <div className="space-y-3 animate-pulse">
+                    <div className="h-4 bg-muted rounded w-3/4" />
+                    <div className="h-4 bg-muted rounded w-full" />
+                    <div className="h-4 bg-muted rounded w-5/6" />
+                    <div className="h-4 bg-muted rounded w-2/3" />
+                    <div className="h-4 bg-muted rounded w-4/5" />
+                    <p className="text-xs text-muted-foreground mt-2 animate-none">
+                      Structuring job description...
+                    </p>
+                  </div>
                 ) : (
                   <>
                     <div className="max-h-96 overflow-y-auto rounded-md border bg-muted/50 p-4">
@@ -397,7 +457,7 @@ export default function ApplicationDetailPage() {
                       onClick={handleStructureJD}
                       disabled={structuring}
                     >
-                      {structuring ? "Structuring..." : "Structure JD"}
+                      Structure JD
                     </Button>
                   </>
                 )}
