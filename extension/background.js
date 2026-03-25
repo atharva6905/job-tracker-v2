@@ -145,14 +145,17 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
 // ─── OVERLAY INJECTION ──────────────────────────────────────────────────────
 
 /**
- * Inject a passive "Tracking this application..." overlay into the given tab.
+ * Inject a passive status overlay into the given tab.
  * Uses chrome.scripting.executeScript so it works even when no content script
- * is injected (e.g. on /apply/ pages).
+ * is injected (e.g. on /apply/ or completion pages).
+ * @param {number} tabId
+ * @param {string} message - Text to display (e.g. "Tracking this application…")
+ * @param {string} [color="#0f172a"] - CSS color for the message text
  */
-function injectTrackingOverlay(tabId) {
+function injectTrackingOverlay(tabId, message, color = "#0f172a") {
   chrome.scripting.executeScript({
     target: { tabId },
-    func: () => {
+    func: (msg, clr) => {
       if (document.getElementById("jt-overlay")) return; // already visible
       const overlay = document.createElement("div");
       overlay.id = "jt-overlay";
@@ -172,11 +175,12 @@ function injectTrackingOverlay(tabId) {
       overlay.innerHTML =
         '<div style="display:flex;align-items:center;gap:8px;">' +
           '<span style="font-size:14px;">&#9989;</span>' +
-          '<p style="margin:0;font-weight:500;font-size:13px;color:#0f172a;">Tracking this application\u2026</p>' +
+          '<p style="margin:0;font-weight:500;font-size:13px;color:' + clr + ';">' + msg + '</p>' +
         '</div>';
       document.body.appendChild(overlay);
       setTimeout(() => overlay.remove(), 3000);
     },
+    args: [message, color],
   }).catch(() => {}); // tab may have navigated away
 }
 
@@ -212,7 +216,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
           ats_job_id: cached.ats_job_id || info.jobId,
         });
         chrome.storage.session.remove(jobKey);
-        injectTrackingOverlay(tabId);
+        injectTrackingOverlay(tabId, "Tracking this application\u2026");
         return;
       }
 
@@ -226,7 +230,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
             source_url: normalizedSource,
             ats_job_id: captureData.ats_job_id || info.jobId,
           });
-          injectTrackingOverlay(tabId);
+          injectTrackingOverlay(tabId, "Tracking this application\u2026");
         })
         .catch(async () => {
           // Last resort: extract from URL only (loses JD)
@@ -236,7 +240,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
             source_url: normalizedSource,
             ats_job_id: info.jobId,
           });
-          injectTrackingOverlay(tabId);
+          injectTrackingOverlay(tabId, "Tracking this application\u2026");
         });
     });
 
@@ -255,10 +259,13 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
         console.log("[job-tracker-v2] completion URL with no tab state, skipping");
         return;
       }
-      await apiCall("/extension/applied", {
+      const result = await apiCall("/extension/applied", {
         source_url: state.sourceUrl,
         ats_job_id: state.jobId,
       });
+      if (result.success) {
+        injectTrackingOverlay(tabId, "Applied \u2713", "#10b981");
+      }
       // Clear tab state regardless of outcome
       chrome.storage.session.remove(tabKey);
     });
