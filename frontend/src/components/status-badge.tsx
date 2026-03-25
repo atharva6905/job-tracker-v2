@@ -1,13 +1,12 @@
-import { Badge } from "@/components/ui/badge";
 import type { ApplicationStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const STATUS_STYLES: Record<ApplicationStatus, string> = {
-  IN_PROGRESS: "bg-blue-100 text-blue-800 border-blue-200",
-  APPLIED: "bg-yellow-100 text-yellow-800 border-yellow-200",
-  INTERVIEW: "bg-purple-100 text-purple-800 border-purple-200",
-  OFFER: "bg-green-100 text-green-800 border-green-200",
-  REJECTED: "bg-red-100 text-red-800 border-red-200",
+  IN_PROGRESS: "bg-status-in-progress-bg text-status-in-progress border-status-in-progress/20",
+  APPLIED: "bg-status-applied-bg text-status-applied border-status-applied/20",
+  INTERVIEW: "bg-status-interview-bg text-status-interview border-status-interview/20",
+  OFFER: "bg-status-offer-bg text-status-offer border-status-offer/20",
+  REJECTED: "bg-status-rejected-bg text-status-rejected border-status-rejected/20",
 };
 
 const STATUS_LABELS: Record<ApplicationStatus, string> = {
@@ -20,8 +19,13 @@ const STATUS_LABELS: Record<ApplicationStatus, string> = {
 
 export function StatusBadge({ status }: { status: ApplicationStatus }) {
   return (
-    <Badge variant="outline" className={cn(STATUS_STYLES[status])}>
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-medium uppercase tracking-editorial",
+        STATUS_STYLES[status]
+      )}
+    >
       {STATUS_LABELS[status]}
-    </Badge>
+    </span>
   );
 }

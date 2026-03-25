@@ -7,7 +7,6 @@ import { useAuth } from "@/components/auth-provider";
 import { StatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -36,19 +35,19 @@ function DeadlineBanner({ deadline, status }: { deadline: string; status: Applic
   const diffMs = deadlineDate.getTime() - now.getTime();
   const diffDays = diffMs / (1000 * 60 * 60 * 24);
 
-  let bgClass = "bg-yellow-50 border-yellow-200 text-yellow-800";
+  let colorClass = "border-status-in-progress/30 text-status-in-progress bg-status-in-progress-bg";
   let label = `Application deadline: ${deadlineDate.toLocaleDateString()}`;
 
   if (diffMs < 0) {
-    bgClass = "bg-red-50 border-red-200 text-red-800";
+    colorClass = "border-status-rejected/30 text-status-rejected bg-status-rejected-bg";
     label = `Deadline passed: ${deadlineDate.toLocaleDateString()}`;
   } else if (diffDays <= 3) {
-    bgClass = "bg-amber-50 border-amber-200 text-amber-800";
+    colorClass = "border-status-in-progress/30 text-status-in-progress bg-status-in-progress-bg";
     label = `Deadline in ${Math.ceil(diffDays)} day${Math.ceil(diffDays) === 1 ? "" : "s"}: ${deadlineDate.toLocaleDateString()}`;
   }
 
   return (
-    <div className={`rounded-md border p-3 text-sm font-medium ${bgClass}`}>
+    <div className={`rounded-md border p-3 text-sm font-medium ${colorClass}`}>
       {label}
     </div>
   );
@@ -56,18 +55,18 @@ function DeadlineBanner({ deadline, status }: { deadline: string; status: Applic
 
 function StructuredJDDisplay({ data }: { data: StructuredJD }) {
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {data.summary && (
         <div>
-          <h4 className="text-sm font-medium text-muted-foreground mb-1">Summary</h4>
-          <p className="text-sm">{data.summary}</p>
+          <h4 className="text-xs font-medium uppercase tracking-editorial text-muted-foreground mb-2">Summary</h4>
+          <p className="text-sm leading-relaxed">{data.summary}</p>
         </div>
       )}
 
       {data.responsibilities.length > 0 && (
         <div>
-          <h4 className="text-sm font-medium text-muted-foreground mb-1">Responsibilities</h4>
-          <ul className="list-disc list-inside text-sm space-y-1">
+          <h4 className="text-xs font-medium uppercase tracking-editorial text-muted-foreground mb-2">Responsibilities</h4>
+          <ul className="list-disc list-inside text-sm space-y-1 leading-relaxed">
             {data.responsibilities.map((r, i) => (
               <li key={i}>{r}</li>
             ))}
@@ -77,8 +76,8 @@ function StructuredJDDisplay({ data }: { data: StructuredJD }) {
 
       {data.required_qualifications.length > 0 && (
         <div>
-          <h4 className="text-sm font-medium text-muted-foreground mb-1">Required Qualifications</h4>
-          <ul className="list-disc list-inside text-sm space-y-1">
+          <h4 className="text-xs font-medium uppercase tracking-editorial text-muted-foreground mb-2">Required Qualifications</h4>
+          <ul className="list-disc list-inside text-sm space-y-1 leading-relaxed">
             {data.required_qualifications.map((q, i) => (
               <li key={i}>{q}</li>
             ))}
@@ -88,8 +87,8 @@ function StructuredJDDisplay({ data }: { data: StructuredJD }) {
 
       {data.preferred_qualifications.length > 0 && (
         <div>
-          <h4 className="text-sm font-medium text-muted-foreground mb-1">Preferred Qualifications</h4>
-          <ul className="list-disc list-inside text-sm space-y-1">
+          <h4 className="text-xs font-medium uppercase tracking-editorial text-muted-foreground mb-2">Preferred Qualifications</h4>
+          <ul className="list-disc list-inside text-sm space-y-1 leading-relaxed">
             {data.preferred_qualifications.map((q, i) => (
               <li key={i}>{q}</li>
             ))}
@@ -99,10 +98,10 @@ function StructuredJDDisplay({ data }: { data: StructuredJD }) {
 
       {data.tech_stack.length > 0 && (
         <div>
-          <h4 className="text-sm font-medium text-muted-foreground mb-1">Tech Stack</h4>
+          <h4 className="text-xs font-medium uppercase tracking-editorial text-muted-foreground mb-2">Tech Stack</h4>
           <div className="flex flex-wrap gap-1.5">
             {data.tech_stack.map((t, i) => (
-              <Badge key={i} variant="secondary">{t}</Badge>
+              <Badge key={i} variant="secondary" className="font-mono text-xs">{t}</Badge>
             ))}
           </div>
         </div>
@@ -110,31 +109,31 @@ function StructuredJDDisplay({ data }: { data: StructuredJD }) {
 
       {data.compensation && (
         <div>
-          <h4 className="text-sm font-medium text-muted-foreground mb-1">Compensation</h4>
+          <h4 className="text-xs font-medium uppercase tracking-editorial text-muted-foreground mb-2">Compensation</h4>
           <p className="text-sm">{data.compensation}</p>
         </div>
       )}
 
       {data.location && (
         <div>
-          <h4 className="text-sm font-medium text-muted-foreground mb-1">Location</h4>
+          <h4 className="text-xs font-medium uppercase tracking-editorial text-muted-foreground mb-2">Location</h4>
           <p className="text-sm">{data.location}{data.work_model ? ` (${data.work_model})` : ""}</p>
         </div>
       )}
 
       {!data.location && data.work_model && (
         <div>
-          <h4 className="text-sm font-medium text-muted-foreground mb-1">Work Model</h4>
+          <h4 className="text-xs font-medium uppercase tracking-editorial text-muted-foreground mb-2">Work Model</h4>
           <p className="text-sm">{data.work_model}</p>
         </div>
       )}
 
       {data.company_overview && (
         <details className="mt-2">
-          <summary className="text-sm font-medium text-muted-foreground cursor-pointer">
+          <summary className="text-xs font-medium uppercase tracking-editorial text-muted-foreground cursor-pointer">
             Company Overview
           </summary>
-          <p className="mt-1 text-sm">{data.company_overview}</p>
+          <p className="mt-2 text-sm leading-relaxed">{data.company_overview}</p>
         </details>
       )}
     </div>
@@ -156,7 +155,6 @@ export default function ApplicationDetailPage() {
   const [pollingForStructure, setPollingForStructure] = useState(false);
   const structureIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Cleanup manual structure polling on unmount
   useEffect(() => {
     return () => {
       if (structureIntervalRef.current) clearInterval(structureIntervalRef.current);
@@ -262,7 +260,6 @@ export default function ApplicationDetailPage() {
       await fetchAPI(`/applications/${params.id}/structure-jd`, {
         method: "POST",
       });
-      // Poll every 3s for up to 30s (10 attempts)
       let attempts = 0;
       const maxAttempts = 10;
       const interval = setInterval(async () => {
@@ -277,7 +274,6 @@ export default function ApplicationDetailPage() {
             clearInterval(interval);
             structureIntervalRef.current = null;
           } else if (attempts >= maxAttempts) {
-            // Timeout — fall back to raw text with retry button
             if (jd) setJobDescription(jd);
             setStructuring(false);
             clearInterval(interval);
@@ -298,7 +294,7 @@ export default function ApplicationDetailPage() {
   if (authLoading || !user || loading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <p className="text-muted-foreground">Loading...</p>
+        <p className="font-mono text-sm text-muted-foreground">Loading...</p>
       </div>
     );
   }
@@ -315,7 +311,6 @@ export default function ApplicationDetailPage() {
   }
 
   const structured = jobDescription?.structured_jd ?? null;
-  // Guard against all-empty structured data (e.g. from structuring empty raw_text)
   const hasStructuredContent = structured && (
     structured.summary ||
     structured.responsibilities.length > 0 ||
@@ -324,19 +319,20 @@ export default function ApplicationDetailPage() {
   );
 
   return (
-    <div className="min-h-screen bg-muted/30">
-      <header className="border-b bg-background">
-        <div className="mx-auto flex max-w-3xl items-center gap-4 px-4 py-3">
-          <Link href="/dashboard">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
+    <div className="min-h-screen">
+      <header className="border-b border-border/50">
+        <div className="mx-auto flex max-w-3xl items-center gap-4 px-6 py-4">
+          <Link
+            href="/dashboard"
+            className="p-2 text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ArrowLeft className="h-4 w-4" />
           </Link>
-          <h1 className="text-xl font-semibold">Application Details</h1>
+          <h1 className="font-display text-xl font-semibold">Application Details</h1>
         </div>
       </header>
 
-      <main className="mx-auto max-w-3xl px-4 py-6 space-y-6">
+      <main className="mx-auto max-w-3xl px-6 py-8 space-y-8">
         {/* Deadline banner */}
         {structured?.application_deadline && application && (
           <DeadlineBanner
@@ -346,160 +342,148 @@ export default function ApplicationDetailPage() {
         )}
 
         {/* Header info */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-start justify-between">
-              <div>
-                <CardTitle className="text-2xl">
-                  {company?.name ?? "Unknown Company"}
-                </CardTitle>
-                <p className="mt-1 text-lg text-muted-foreground">
-                  {application.role}
-                </p>
-              </div>
-              <StatusBadge status={application.status} />
+        <section className="border border-border/50 rounded-lg p-5">
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              <h2 className="font-display text-2xl font-semibold">
+                {company?.name ?? "Unknown Company"}
+              </h2>
+              <p className="mt-1 text-muted-foreground">
+                {application.role}
+              </p>
             </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              {application.date_applied && (
-                <div>
-                  <p className="font-medium text-muted-foreground">
-                    Date Applied
-                  </p>
-                  <p>{new Date(application.date_applied + "T00:00:00").toLocaleDateString()}</p>
-                </div>
-              )}
+            <StatusBadge status={application.status} />
+          </div>
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            {application.date_applied && (
               <div>
-                <p className="font-medium text-muted-foreground">Created</p>
-                <p>{new Date(application.created_at).toLocaleDateString()}</p>
-              </div>
-              {application.source_url && (
-                <div className="col-span-2">
-                  <p className="font-medium text-muted-foreground">
-                    Job Posting
-                  </p>
-                  <a
-                    href={application.source_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-blue-600 hover:underline"
-                  >
-                    View original posting
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                </div>
-              )}
-            </div>
-
-            {application.notes && (
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">
-                  Notes
+                <p className="text-xs uppercase tracking-editorial text-muted-foreground mb-1">
+                  Date Applied
                 </p>
-                <p className="mt-1 text-sm whitespace-pre-wrap">
-                  {application.notes}
-                </p>
+                <p>{new Date(application.date_applied + "T00:00:00").toLocaleDateString()}</p>
               </div>
             )}
-          </CardContent>
-        </Card>
+            <div>
+              <p className="text-xs uppercase tracking-editorial text-muted-foreground mb-1">Created</p>
+              <p>{new Date(application.created_at).toLocaleDateString()}</p>
+            </div>
+            {application.source_url && (
+              <div className="col-span-2">
+                <p className="text-xs uppercase tracking-editorial text-muted-foreground mb-1">
+                  Job Posting
+                </p>
+                <a
+                  href={application.source_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-accent-gold hover:underline text-sm"
+                >
+                  View original posting
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              </div>
+            )}
+          </div>
+
+          {application.notes && (
+            <div className="mt-4 pt-4 border-t border-border/50">
+              <p className="text-xs uppercase tracking-editorial text-muted-foreground mb-1">
+                Notes
+              </p>
+              <p className="text-sm whitespace-pre-wrap">
+                {application.notes}
+              </p>
+            </div>
+          )}
+        </section>
 
         {/* Correct status */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Correct Status</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="mb-3 text-sm text-muted-foreground">
-              If the automated status is wrong, you can correct it here.
-            </p>
-            <Select
-              value={application.status === "IN_PROGRESS" ? "" : application.status}
-              onValueChange={handleStatusChange}
-              disabled={updating}
-            >
-              <SelectItem value="" disabled>
-                Select status...
+        <section className="border border-border/50 rounded-lg p-5">
+          <h2 className="text-xs font-medium uppercase tracking-editorial text-muted-foreground mb-3">
+            Correct Status
+          </h2>
+          <p className="mb-3 text-sm text-muted-foreground">
+            If the automated status is wrong, you can correct it here.
+          </p>
+          <Select
+            value={application.status === "IN_PROGRESS" ? "" : application.status}
+            onValueChange={handleStatusChange}
+            disabled={updating}
+          >
+            <SelectItem value="" disabled>
+              Select status...
+            </SelectItem>
+            {CORRECTABLE_STATUSES.map(({ value, label }) => (
+              <SelectItem key={value} value={value}>
+                {label}
               </SelectItem>
-              {CORRECTABLE_STATUSES.map(({ value, label }) => (
-                <SelectItem key={value} value={value}>
-                  {label}
-                </SelectItem>
-              ))}
-            </Select>
-          </CardContent>
-        </Card>
+            ))}
+          </Select>
+        </section>
 
         {/* Job Description */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Job Description</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {jobDescription ? (
-              <>
-                <p className="mb-2 text-xs text-muted-foreground">
-                  Captured at apply time ({new Date(jobDescription.captured_at).toLocaleString()})
-                </p>
-                {hasStructuredContent ? (
-                  <StructuredJDDisplay data={structured} />
-                ) : pollingForStructure || structuring ? (
-                  <div className="space-y-3 animate-pulse">
-                    <div className="h-4 bg-muted rounded w-3/4" />
-                    <div className="h-4 bg-muted rounded w-full" />
-                    <div className="h-4 bg-muted rounded w-5/6" />
-                    <div className="h-4 bg-muted rounded w-2/3" />
-                    <div className="h-4 bg-muted rounded w-4/5" />
-                    <p className="text-xs text-muted-foreground mt-2 animate-none">
-                      Structuring job description...
-                    </p>
-                  </div>
-                ) : (
-                  <>
-                    <div className="max-h-96 overflow-y-auto rounded-md border bg-muted/50 p-4">
-                      <pre className="whitespace-pre-wrap text-sm font-mono">
-                        {jobDescription.raw_text}
-                      </pre>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="mt-3"
-                      onClick={handleStructureJD}
-                      disabled={structuring}
-                    >
-                      Structure JD
-                    </Button>
-                  </>
-                )}
-              </>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Job description not captured — the extension was not active when
-                this application was detected.
+        <section className="border border-border/50 rounded-lg p-5">
+          <h2 className="text-xs font-medium uppercase tracking-editorial text-muted-foreground mb-4">
+            Job Description
+          </h2>
+          {jobDescription ? (
+            <>
+              <p className="mb-3 font-mono text-xs text-muted-foreground/60">
+                Captured at apply time ({new Date(jobDescription.captured_at).toLocaleString()})
               </p>
-            )}
-          </CardContent>
-        </Card>
+              {hasStructuredContent ? (
+                <StructuredJDDisplay data={structured} />
+              ) : pollingForStructure || structuring ? (
+                <div className="space-y-3 animate-pulse">
+                  <div className="h-4 bg-secondary rounded w-3/4" />
+                  <div className="h-4 bg-secondary rounded w-full" />
+                  <div className="h-4 bg-secondary rounded w-5/6" />
+                  <div className="h-4 bg-secondary rounded w-2/3" />
+                  <div className="h-4 bg-secondary rounded w-4/5" />
+                  <p className="font-mono text-xs text-muted-foreground mt-2 animate-none">
+                    Structuring job description...
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="max-h-96 overflow-y-auto rounded-md border border-border/50 bg-secondary/50 p-4">
+                    <pre className="whitespace-pre-wrap text-sm font-sans leading-relaxed">
+                      {jobDescription.raw_text}
+                    </pre>
+                  </div>
+                  <button
+                    className="mt-3 rounded-md border border-border/50 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    onClick={handleStructureJD}
+                    disabled={structuring}
+                  >
+                    Structure JD
+                  </button>
+                </>
+              )}
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground italic">
+              Job description not captured — the extension was not active when
+              this application was detected.
+            </p>
+          )}
+        </section>
 
         <EmailTimeline applicationId={params.id} />
 
         {/* Danger zone */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Danger Zone</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Button
-              variant="destructive"
-              onClick={() => setDeleteDialogOpen(true)}
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              Delete application
-            </Button>
-          </CardContent>
-        </Card>
+        <section className="border border-destructive/20 rounded-lg p-5">
+          <h2 className="text-xs font-medium uppercase tracking-editorial text-destructive mb-3">
+            Danger Zone
+          </h2>
+          <button
+            onClick={() => setDeleteDialogOpen(true)}
+            className="inline-flex items-center rounded-md bg-destructive/10 border border-destructive/20 text-destructive px-4 py-2 text-sm font-medium transition-colors hover:bg-destructive/20"
+          >
+            <Trash2 className="mr-2 h-4 w-4" />
+            Delete application
+          </button>
+        </section>
       </main>
 
       <Dialog

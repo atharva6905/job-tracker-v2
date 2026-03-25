@@ -4,8 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth-provider";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -14,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { fetchAPI } from "@/lib/api";
 import type { EmailAccount } from "@/lib/types";
 import { ArrowLeft, Download, Mail, RefreshCw, Trash2 } from "lucide-react";
@@ -68,10 +67,8 @@ export default function SettingsPage() {
     setResyncingId(accountId);
     try {
       await fetchAPI(`/gmail/accounts/${accountId}/poll?force=true`, { method: "POST" });
-      // Poll runs in the background — keep button disabled so it doesn't look like a no-op
       resyncTimerRef.current = setTimeout(() => setResyncingId(null), 15_000);
     } catch {
-      // Error handled by fetchAPI — reset immediately on failure
       setResyncingId(null);
     }
   };
@@ -111,122 +108,118 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-muted/30">
-      <header className="border-b bg-background">
-        <div className="mx-auto flex max-w-3xl items-center gap-4 px-4 py-3">
-          <Link href="/dashboard">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
+    <div className="min-h-screen">
+      <header className="border-b border-border/50">
+        <div className="mx-auto flex max-w-3xl items-center gap-4 px-6 py-4">
+          <Link
+            href="/dashboard"
+            className="p-2 text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ArrowLeft className="h-4 w-4" />
           </Link>
-          <h1 className="text-xl font-semibold">Settings</h1>
+          <h1 className="font-display text-xl font-semibold">Settings</h1>
         </div>
       </header>
 
-      <main className="mx-auto max-w-3xl px-4 py-6 space-y-6">
+      <main className="mx-auto max-w-3xl px-6 py-8 space-y-8">
         {/* Account info */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Account</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm">
-              <span className="text-muted-foreground">Email:</span>{" "}
-              {user?.email}
-            </p>
-          </CardContent>
-        </Card>
+        <section className="border border-border/50 rounded-lg p-5">
+          <h2 className="text-xs font-medium uppercase tracking-editorial text-muted-foreground mb-3">
+            Account
+          </h2>
+          <p className="text-sm">
+            <span className="text-muted-foreground">Email:</span>{" "}
+            {user?.email}
+          </p>
+        </section>
 
         {/* Gmail accounts */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Connected Gmail Accounts</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {loading ? (
-              <p className="text-sm text-muted-foreground">Loading...</p>
-            ) : accounts.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No Gmail accounts connected. Connect one to enable automatic
-                status updates.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {accounts.map((account) => (
-                  <div
-                    key={account.id}
-                    className="flex items-center justify-between rounded-md border p-3"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Mail className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm">{account.email}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={resyncingId === account.id}
-                        onClick={() => handleResync(account.id)}
-                        title="Re-sync emails from the last 30 days"
-                      >
-                        <RefreshCw className={`h-3 w-3 mr-1 ${resyncingId === account.id ? "animate-spin" : ""}`} />
-                        {resyncingId === account.id ? "Syncing…" : "Re-sync"}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setDisconnectId(account.id)}
-                      >
-                        Disconnect
-                      </Button>
-                    </div>
+        <section className="border border-border/50 rounded-lg p-5">
+          <h2 className="text-xs font-medium uppercase tracking-editorial text-muted-foreground mb-4">
+            Connected Gmail Accounts
+          </h2>
+          {loading ? (
+            <p className="text-sm text-muted-foreground">Loading...</p>
+          ) : accounts.length === 0 ? (
+            <p className="text-sm text-muted-foreground mb-4">
+              No Gmail accounts connected. Connect one to enable automatic
+              status updates.
+            </p>
+          ) : (
+            <div className="space-y-2 mb-4">
+              {accounts.map((account) => (
+                <div
+                  key={account.id}
+                  className="flex items-center justify-between rounded-md border border-border/50 p-3"
+                >
+                  <div className="flex items-center gap-2">
+                    <Mail className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm">{account.email}</span>
                   </div>
-                ))}
-              </div>
-            )}
-            <Button onClick={handleConnectGmail} className="w-full">
-              <Mail className="mr-2 h-4 w-4" />
-              Connect Gmail
-            </Button>
-          </CardContent>
-        </Card>
+                  <div className="flex items-center gap-2">
+                    <button
+                      disabled={resyncingId === account.id}
+                      onClick={() => handleResync(account.id)}
+                      title="Re-sync emails from the last 30 days"
+                      className="inline-flex items-center gap-1 rounded-md border border-border/50 px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                    >
+                      <RefreshCw className={`h-3 w-3 ${resyncingId === account.id ? "animate-spin" : ""}`} />
+                      {resyncingId === account.id ? "Syncing..." : "Re-sync"}
+                    </button>
+                    <button
+                      onClick={() => setDisconnectId(account.id)}
+                      className="inline-flex items-center rounded-md border border-border/50 px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      Disconnect
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <button
+            onClick={handleConnectGmail}
+            className="inline-flex items-center justify-center w-full rounded-md bg-foreground text-background px-4 py-2.5 text-sm font-medium transition-colors hover:bg-foreground/90"
+          >
+            <Mail className="mr-2 h-4 w-4" />
+            Connect Gmail
+          </button>
+        </section>
 
         {/* Data section */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Your Data</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        <section className="border border-border/50 rounded-lg p-5">
+          <h2 className="text-xs font-medium uppercase tracking-editorial text-muted-foreground mb-4">
+            Your Data
+          </h2>
+          <div className="space-y-4">
             <div>
-              <Button
-                variant="outline"
+              <button
                 onClick={handleExport}
                 disabled={exporting}
-                className="w-full"
+                className="inline-flex items-center justify-center w-full rounded-md border border-border/50 px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
               >
                 <Download className="mr-2 h-4 w-4" />
                 {exporting ? "Exporting..." : "Export my data"}
-              </Button>
-              <p className="mt-1 text-xs text-muted-foreground">
+              </button>
+              <p className="mt-1.5 text-xs text-muted-foreground/60">
                 Download all your data as a JSON file
               </p>
             </div>
 
             <div>
-              <Button
-                variant="destructive"
+              <button
                 onClick={() => setDeleteDialogOpen(true)}
-                className="w-full"
+                className="inline-flex items-center justify-center w-full rounded-md bg-destructive/10 border border-destructive/20 text-destructive px-4 py-2.5 text-sm font-medium transition-colors hover:bg-destructive/20"
               >
                 <Trash2 className="mr-2 h-4 w-4" />
                 Delete my account
-              </Button>
-              <p className="mt-1 text-xs text-muted-foreground">
+              </button>
+              <p className="mt-1.5 text-xs text-muted-foreground/60">
                 Permanently delete your account and all associated data
               </p>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </section>
       </main>
 
       {/* Disconnect Gmail confirmation */}

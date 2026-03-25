@@ -1,22 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/components/auth-provider";
 import { SetupChecklist } from "@/components/setup-checklist";
 import { StatusBadge } from "@/components/status-badge";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { JDSheet } from "@/components/JDSheet";
 import { fetchAPI } from "@/lib/api";
 import type { Application, ApplicationStatus, Company } from "@/lib/types";
-import { LogOut, Settings } from "lucide-react";
+import { ArrowRight, FileText, LogOut, Settings } from "lucide-react";
 
-const COLUMNS: { status: ApplicationStatus; label: string }[] = [
-  { status: "IN_PROGRESS", label: "In Progress" },
-  { status: "APPLIED", label: "Applied" },
-  { status: "INTERVIEW", label: "Interview" },
-  { status: "OFFER", label: "Offer" },
-  { status: "REJECTED", label: "Rejected" },
+const STATUS_FILTERS: { value: ApplicationStatus | "ALL"; label: string }[] = [
+  { value: "ALL", label: "All" },
+  { value: "IN_PROGRESS", label: "In Progress" },
+  { value: "APPLIED", label: "Applied" },
+  { value: "INTERVIEW", label: "Interview" },
+  { value: "OFFER", label: "Offer" },
+  { value: "REJECTED", label: "Rejected" },
 ];
 
 export default function DashboardPage() {
@@ -24,8 +24,15 @@ export default function DashboardPage() {
   const [applications, setApplications] = useState<Application[]>([]);
   const [companies, setCompanies] = useState<Record<string, Company>>({});
   const [dataLoading, setDataLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<ApplicationStatus | "ALL">("ALL");
+  const [jdSheet, setJdSheet] = useState<{
+    open: boolean;
+    appId: string | null;
+    company: string;
+    role: string;
+  }>({ open: false, appId: null, company: "", role: "" });
 
-  // Only fetch data after auth is confirmed
   useEffect(() => {
     if (authLoading || !user) return;
 
@@ -50,99 +57,223 @@ export default function DashboardPage() {
     load();
   }, [authLoading, user]);
 
-  // Show spinner while auth is initializing or while redirect is pending
+  const filtered = useMemo(() => {
+    let result = applications;
+    if (statusFilter !== "ALL") {
+      result = result.filter((a) => a.status === statusFilter);
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      result = result.filter((a) => {
+        const companyName = companies[a.company_id]?.name?.toLowerCase() ?? "";
+        return companyName.includes(q) || a.role.toLowerCase().includes(q);
+      });
+    }
+    return result;
+  }, [applications, statusFilter, search, companies]);
+
+  const formatDate = (app: Application) => {
+    const dateStr = app.date_applied || app.created_at;
+    if (!dateStr) return null;
+    const d = dateStr.length === 10 ? new Date(dateStr + "T00:00:00") : new Date(dateStr);
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  };
+
   if (authLoading || !user) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <p className="text-muted-foreground">Loading...</p>
+        <p className="text-muted-foreground font-mono text-sm">Loading...</p>
       </div>
     );
   }
 
-  const appsByStatus = (status: ApplicationStatus) =>
-    applications.filter((a) => a.status === status);
-
-  const formatDate = (app: Application) => {
-    const dateStr = app.status === "IN_PROGRESS" ? app.created_at : app.date_applied;
-    if (!dateStr) return null;
-    // Date-only strings (YYYY-MM-DD, length 10) are parsed as UTC midnight by JS.
-    // Appending T00:00:00 (no Z) forces local-time interpretation, preventing
-    // off-by-one display in timezones behind UTC.
-    const d = dateStr.length === 10 ? new Date(dateStr + "T00:00:00") : new Date(dateStr);
-    return d.toLocaleDateString();
-  };
-
   return (
-    <div className="min-h-screen bg-muted/30">
-      <header className="border-b bg-background">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
-          <h1 className="text-xl font-semibold">Job Tracker</h1>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">{user.email}</span>
-            <Link href="/settings">
-              <Button variant="ghost" size="icon">
-                <Settings className="h-4 w-4" />
-              </Button>
+    <div className="min-h-screen">
+      {/* Header */}
+      <header className="border-b border-border/50">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+          <h1 className="font-display text-xl font-semibold tracking-tight">
+            Job Tracker
+          </h1>
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-xs text-muted-foreground">
+              {user.email}
+            </span>
+            <Link
+              href="/settings"
+              className="p-2 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <Settings className="h-4 w-4" />
             </Link>
-            <Button variant="ghost" size="icon" onClick={signOut}>
+            <button
+              onClick={signOut}
+              className="p-2 text-muted-foreground hover:text-foreground transition-colors"
+            >
               <LogOut className="h-4 w-4" />
-            </Button>
+            </button>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 py-6">
+      <main className="mx-auto max-w-6xl px-6 py-8">
         <SetupChecklist />
 
+        {/* Page heading */}
+        <div className="mb-8">
+          <h2 className="font-display text-4xl font-semibold tracking-tight">
+            Applications
+          </h2>
+          <div className="mt-2 h-px bg-gradient-to-r from-accent-gold/40 to-transparent" />
+        </div>
+
+        {/* Search + filters */}
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-4">
+            <input
+              type="text"
+              placeholder="Search company or role..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="bg-transparent border-b border-border/50 pb-1 text-sm font-sans text-foreground placeholder:text-muted-foreground/60 focus:border-accent-gold focus:outline-none transition-colors w-64"
+            />
+          </div>
+
+          <div className="flex items-center gap-1">
+            {STATUS_FILTERS.map(({ value, label }) => (
+              <button
+                key={value}
+                onClick={() => setStatusFilter(value)}
+                className={`px-3 py-1.5 text-[11px] font-medium uppercase tracking-editorial transition-colors ${
+                  statusFilter === value
+                    ? "text-accent-gold border-b-2 border-accent-gold"
+                    : "text-muted-foreground hover:text-foreground border-b-2 border-transparent"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Row count */}
+        <div className="mb-3">
+          <span className="font-mono text-xs text-muted-foreground tabular-nums">
+            {filtered.length} application{filtered.length !== 1 ? "s" : ""}
+          </span>
+        </div>
+
         {dataLoading ? (
-          <div className="flex justify-center py-12">
-            <p className="text-muted-foreground">Loading applications...</p>
+          <div className="py-16 text-center">
+            <p className="font-mono text-sm text-muted-foreground">
+              Loading applications...
+            </p>
           </div>
         ) : applications.length === 0 ? (
-          <div className="flex justify-center py-12">
-            <p className="text-muted-foreground">
-              No applications yet. Install the extension and start applying!
+          <div className="py-24 text-center">
+            <h3 className="font-display text-2xl font-semibold text-foreground/80">
+              No applications yet
+            </h3>
+            <p className="mt-3 text-sm text-muted-foreground max-w-sm mx-auto">
+              Install the Chrome extension and start applying on Workday.
+              Applications are captured automatically.
+            </p>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="py-16 text-center">
+            <p className="text-sm text-muted-foreground">
+              No applications match your filters.
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
-            {COLUMNS.map(({ status, label }) => (
-              <div key={status}>
-                <div className="mb-3 flex items-center gap-2">
-                  <h2 className="text-sm font-semibold">{label}</h2>
-                  <span className="text-xs text-muted-foreground">
-                    {appsByStatus(status).length}
-                  </span>
-                </div>
-                <div className="space-y-2">
-                  {appsByStatus(status).map((app) => (
-                    <Link key={app.id} href={`/applications/${app.id}`}>
-                      <Card className="cursor-pointer transition-shadow hover:shadow-md">
-                        <CardContent className="p-3">
-                          <p className="text-sm font-medium truncate">
-                            {companies[app.company_id]?.name ?? "Unknown"}
-                          </p>
-                          <p className="text-xs text-muted-foreground truncate">
-                            {app.role}
-                          </p>
-                          <div className="mt-2 flex items-center justify-between">
-                            <StatusBadge status={app.status} />
-                            {formatDate(app) && (
-                              <span className="text-xs text-muted-foreground">
-                                {formatDate(app)}
-                              </span>
-                            )}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            ))}
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-white/10">
+                  <th className="pb-3 text-left text-[11px] font-medium uppercase tracking-editorial text-muted-foreground">
+                    Company
+                  </th>
+                  <th className="pb-3 text-left text-[11px] font-medium uppercase tracking-editorial text-muted-foreground">
+                    Role
+                  </th>
+                  <th className="pb-3 text-left text-[11px] font-medium uppercase tracking-editorial text-muted-foreground">
+                    Status
+                  </th>
+                  <th className="pb-3 text-left text-[11px] font-medium uppercase tracking-editorial text-muted-foreground font-mono">
+                    Date
+                  </th>
+                  <th className="pb-3 text-center text-[11px] font-medium uppercase tracking-editorial text-muted-foreground">
+                    JD
+                  </th>
+                  <th className="pb-3 w-10" />
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((app) => {
+                  const companyName =
+                    companies[app.company_id]?.name ?? "Unknown";
+                  return (
+                    <tr
+                      key={app.id}
+                      className="group border-b border-white/[0.06] transition-all hover:border-l-2 hover:border-l-accent-gold hover:bg-white/[0.015]"
+                    >
+                      <td className="py-3.5 pr-4">
+                        <span className="text-sm font-medium">
+                          {companyName}
+                        </span>
+                      </td>
+                      <td className="py-3.5 pr-4">
+                        <span className="text-sm text-muted-foreground">
+                          {app.role}
+                        </span>
+                      </td>
+                      <td className="py-3.5 pr-4">
+                        <StatusBadge status={app.status} />
+                      </td>
+                      <td className="py-3.5 pr-4">
+                        <span className="font-mono text-xs text-muted-foreground tabular-nums">
+                          {formatDate(app) ?? "\u2014"}
+                        </span>
+                      </td>
+                      <td className="py-3.5 text-center">
+                        <button
+                          onClick={() =>
+                            setJdSheet({
+                              open: true,
+                              appId: app.id,
+                              company: companyName,
+                              role: app.role,
+                            })
+                          }
+                          className="inline-flex items-center justify-center p-1.5 rounded transition-colors text-muted-foreground/50 hover:text-accent-gold"
+                          title="View job description"
+                        >
+                          <FileText className="h-4 w-4" />
+                        </button>
+                      </td>
+                      <td className="py-3.5 text-right">
+                        <Link
+                          href={`/applications/${app.id}`}
+                          className="inline-flex items-center p-1.5 text-muted-foreground/40 hover:text-accent-gold transition-colors"
+                        >
+                          <ArrowRight className="h-3.5 w-3.5" />
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </main>
+
+      <JDSheet
+        open={jdSheet.open}
+        onOpenChange={(open) => setJdSheet((prev) => ({ ...prev, open }))}
+        applicationId={jdSheet.appId}
+        companyName={jdSheet.company}
+        role={jdSheet.role}
+      />
     </div>
   );
 }
