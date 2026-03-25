@@ -4,8 +4,6 @@ import uuid
 from unittest.mock import MagicMock, patch
 
 import pytest
-from sqlalchemy import select
-
 from app.models.application import Application, ApplicationStatus
 from app.models.company import Company
 from app.models.job_description import JobDescription
