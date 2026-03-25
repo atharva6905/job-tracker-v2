@@ -89,6 +89,26 @@ function roleFromUrl(jobId) {
   return cleaned.replace(/[-_]/g, " ").trim() || "Unknown Role";
 }
 
+// ─── SESSION STORAGE POLL ────────────────────────────────────────────────────
+
+/**
+ * Poll chrome.storage.session for a job entry with a non-empty job_description.
+ * Content script writes phase 1 (core fields) immediately and phase 2 (with JD)
+ * after 1.5s. If /apply/ navigation fires before phase 2, this waits for the JD.
+ * Returns the cached entry (possibly with empty JD on timeout).
+ */
+async function waitForJD(jobKey, maxWaitMs = 2000, intervalMs = 200) {
+  const deadline = Date.now() + maxWaitMs;
+  while (Date.now() < deadline) {
+    const stored = await chrome.storage.session.get(jobKey);
+    const cached = stored[jobKey];
+    if (cached?.job_description) return cached;
+    await new Promise(r => setTimeout(r, intervalMs));
+  }
+  const stored = await chrome.storage.session.get(jobKey);
+  return stored[jobKey] || null;
+}
+
 // ─── API CALL HELPER ─────────────────────────────────────────────────────────
 
 /**
@@ -201,12 +221,12 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
     const tabKey = `tab_${tabId}`;
     chrome.storage.session.set({ [tabKey]: { jobId: info.jobId, sourceUrl: normalizedSource } });
 
-    // Attempt to read rich data from chrome.storage.session (written by content.js
-    // on the /job/{id} page). This is more reliable than messaging the content
-    // script, which may be unreachable after SPA navigation.
+    // Read rich data from chrome.storage.session (written by content.js).
+    // Poll up to 2s for JD — content.js phase 2 writes JD after 1.5s, but
+    // /apply/ navigation may fire before that. Waiting ensures we capture JD
+    // when the user clicks Apply quickly after viewing the job page.
     const jobKey = `job_${info.jobId}`;
-    chrome.storage.session.get(jobKey).then(async (stored) => {
-      const cached = stored[jobKey];
+    waitForJD(jobKey).then(async (cached) => {
       if (cached && cached.company_name) {
         await apiCall("/extension/capture", {
           company_name: cached.company_name,
