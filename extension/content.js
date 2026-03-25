@@ -14,8 +14,10 @@ function isWorkdayPage() {
   return meta?.content?.toLowerCase() === "workday";
 }
 
-if (!isWorkdayPage() || /\/apply(\/|$)/.test(window.location.pathname) || !/\/job\/[^/]/.test(window.location.pathname)) {
-  // Not a Workday job detail page (requires /job/{id}), or on an apply form — exit.
+const pathname = window.location.pathname;
+const isJobPage = /\/job\/[^/]/.test(pathname) || /\/details\/[^/]/.test(pathname);
+if (!isWorkdayPage() || /\/apply(\/|$)/.test(pathname) || !isJobPage) {
+  // Not a Workday job detail page (requires /job/{id} or /details/{id}), or on an apply form — exit.
   // No marker, no overlay, no scraping.
   throw new Error("job-tracker-v2: not a Workday job posting page, exiting content script");
 }
@@ -43,10 +45,17 @@ document.body.appendChild(marker);
 
 // ─── JOB ID EXTRACTION ───────────────────────────────────────────────────────
 // Extract the job ID segment from a Workday URL path.
+// Supports both /job/{location}/{id} and /details/{id} patterns.
 // e.g. /en-US/sdm_careers/job/.../Cashier_R2000648316 → "Cashier_R2000648316"
+// e.g. /en-US/External/details/Software-Developer_R260004443-1 → "Software-Developer_R260004443-1"
 function extractJobId() {
-  const match = window.location.pathname.match(/\/job\/([^/?#]+)/);
-  return match ? match[1] : null;
+  const p = window.location.pathname;
+  // Try /details/{id} first (single segment after /details/)
+  const detailsMatch = p.match(/\/details\/([^/?#]+)/);
+  if (detailsMatch) return detailsMatch[1];
+  // Fall back to /job/{...}/{id} (last segment after /job/)
+  const jobMatch = p.match(/\/job\/([^/?#]+)/);
+  return jobMatch ? jobMatch[1] : null;
 }
 
 // ─── JD EXTRACTION ────────────────────────────────────────────────────────────
@@ -105,7 +114,7 @@ function guessRoleFromPage() {
 function guessCompanyFromPage() {
   const wdCompanyName = document.querySelector('[data-automation-id="jobPostingCompanyName"]')?.textContent?.trim();
   const wdOrgName = document.querySelector('[data-automation-id="organizationName"]')?.textContent?.trim();
-  const pathMatch = window.location.pathname.match(/^\/[^/]+\/([^/]+)\/job\//);
+  const pathMatch = window.location.pathname.match(/^\/[^/]+\/([^/]+)\/(?:job|details)\//);
   const slug = pathMatch ? pathMatch[1].replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()) : null;
   const titleParts = document.title.split(/[-–|]/);
   const titleFallback = titleParts[titleParts.length - 1]?.trim() || "Unknown";

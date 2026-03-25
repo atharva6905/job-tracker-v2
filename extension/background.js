@@ -26,7 +26,7 @@ function normalizeSourceUrl(url) {
   }
 }
 
-const APPLY_RE = /^https?:\/\/[^/]*\.(myworkdayjobs|myworkday|myworkdaysite)\.com\/.*\/job\/.*\/apply(\/|$)/;
+const APPLY_RE = /^https?:\/\/[^/]*\.(myworkdayjobs|myworkday|myworkdaysite)\.com\/.*\/(?:job|details)\/.*\/apply(\/|$)/;
 const COMPLETION_RE = /\/jobTasks\/completed\/application/;
 
 function isApplyUrl(url) {
@@ -39,8 +39,10 @@ function isCompletionUrl(url) {
 
 /**
  * Extract job info from a Workday /apply/ URL.
- * e.g. https://meredith.wd5.myworkdayjobs.com/en-US/careers/job/London/Warehouse-Worker_JR26-27660/apply/applyManually
- * → { jobId: "Warehouse-Worker_JR26-27660", sourceUrl: "https://...job/London/Warehouse-Worker_JR26-27660" }
+ * Supports both /job/ and /details/ path patterns:
+ * e.g. https://meredith.wd5.myworkdayjobs.com/en-US/careers/job/London/Warehouse-Worker_JR26-27660/apply
+ * e.g. https://bmo.wd3.myworkdayjobs.com/en-US/External/details/Software-Developer_R260004443-1/apply
+ * → { jobId: "...", sourceUrl: "https://...{path-before-apply}" }
  */
 function extractJobInfoFromUrl(url) {
   const applyIdx = url.indexOf("/apply");
@@ -134,6 +136,44 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
 // tabs.onUpdated detecting /apply/ navigation. The "Track it" button has
 // been removed; content.js caches data to chrome.storage.session instead.
 
+// ─── OVERLAY INJECTION ──────────────────────────────────────────────────────
+
+/**
+ * Inject a passive "Tracking this application..." overlay into the given tab.
+ * Uses chrome.scripting.executeScript so it works even when no content script
+ * is injected (e.g. on /apply/ pages).
+ */
+function injectTrackingOverlay(tabId) {
+  chrome.scripting.executeScript({
+    target: { tabId },
+    func: () => {
+      if (document.getElementById("jt-overlay")) return; // already visible
+      const overlay = document.createElement("div");
+      overlay.id = "jt-overlay";
+      overlay.style.cssText = [
+        "position:fixed",
+        "bottom:20px",
+        "right:20px",
+        "z-index:2147483647",
+        "background:#ffffff",
+        "border:1px solid #e2e8f0",
+        "border-radius:12px",
+        "padding:12px 16px",
+        "box-shadow:0 8px 24px rgba(0,0,0,0.12)",
+        "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
+        "max-width:260px"
+      ].join(";");
+      overlay.innerHTML =
+        '<div style="display:flex;align-items:center;gap:8px;">' +
+          '<span style="font-size:14px;">&#9989;</span>' +
+          '<p style="margin:0;font-weight:500;font-size:13px;color:#0f172a;">Tracking this application\u2026</p>' +
+        '</div>';
+      document.body.appendChild(overlay);
+      setTimeout(() => overlay.remove(), 3000);
+    },
+  }).catch(() => {}); // tab may have navigated away
+}
+
 // ─── TAB NAVIGATION LISTENER ────────────────────────────────────────────────
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
@@ -157,7 +197,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
     const jobKey = `job_${info.jobId}`;
     chrome.storage.session.get(jobKey).then(async (stored) => {
       const cached = stored[jobKey];
-      if (cached && cached.company_name && cached.job_description) {
+      if (cached && cached.company_name) {
         await apiCall("/extension/capture", {
           company_name: cached.company_name,
           role: cached.role,
@@ -166,6 +206,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
           ats_job_id: cached.ats_job_id || info.jobId,
         });
         chrome.storage.session.remove(jobKey);
+        injectTrackingOverlay(tabId);
         return;
       }
 
@@ -179,6 +220,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
             source_url: normalizedSource,
             ats_job_id: captureData.ats_job_id || info.jobId,
           });
+          injectTrackingOverlay(tabId);
         })
         .catch(async () => {
           // Last resort: extract from URL only (loses JD)
@@ -188,10 +230,11 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
             source_url: normalizedSource,
             ats_job_id: info.jobId,
           });
+          injectTrackingOverlay(tabId);
         });
     });
 
-    // Hide overlay (existing behavior)
+    // Hide content script overlay if still visible from /job/ page
     chrome.tabs.sendMessage(tabId, { type: "HIDE_OVERLAY" }).catch(() => {});
     return;
   }
