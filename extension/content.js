@@ -263,6 +263,10 @@ function tryInitForCurrentUrl() {
   // If background.js reads after phase 2, it gets everything.
   const jobKey = `job_${jobId}`;
 
+  // Register overlay timer first — must not be blocked by storage errors
+  overlayTimeoutId = setTimeout(maybeShowOverlay, 1500);
+
+  // Phase 1: write core capture data immediately
   _cachedCaptureData = {
     company_name: guessCompanyFromPage(),
     role: guessRoleFromPage(),
@@ -270,7 +274,11 @@ function tryInitForCurrentUrl() {
     source_url: normalizeSourceUrl(window.location.href),
     ats_job_id: jobId,
   };
-  chrome.storage.session.set({ [jobKey]: { ..._cachedCaptureData } });
+  try {
+    chrome.storage.session.set({ [jobKey]: { ..._cachedCaptureData } });
+  } catch (e) {
+    console.error("[job-tracker-v2] phase 1 storage write failed:", e);
+  }
 
   console.log("[job-tracker-v2] initialized for job:", jobId, _cachedCaptureData.source_url);
 
@@ -280,12 +288,13 @@ function tryInitForCurrentUrl() {
     _cachedCaptureData.company_name = guessCompanyFromPage();
     _cachedCaptureData.role = guessRoleFromPage();
     _cachedCaptureData.job_description = extractJobDescription();
-    chrome.storage.session.set({ [jobKey]: { ..._cachedCaptureData } });
+    try {
+      chrome.storage.session.set({ [jobKey]: { ..._cachedCaptureData } });
+    } catch (e) {
+      console.error("[job-tracker-v2] phase 2 storage write failed:", e);
+    }
     console.log("[job-tracker-v2] cached to session storage:", jobKey);
   }, 1500);
-
-  // Show overlay after DOM settles
-  overlayTimeoutId = setTimeout(maybeShowOverlay, 1500);
 }
 
 // ─── MESSAGE LISTENER (one-time) ────────────────────────────────────────────
