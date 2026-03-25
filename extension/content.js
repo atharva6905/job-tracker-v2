@@ -9,16 +9,26 @@ function isWorkdayPage() {
   return /\.(myworkdayjobs|myworkday|myworkdaysite)\.com$/i.test(window.location.hostname);
 }
 
-const pathname = window.location.pathname;
-const isJobPage = /\/job\/[^/]/.test(pathname) || /\/details\/[^/]/.test(pathname);
-if (!isWorkdayPage() || /\/apply(\/|$)/.test(pathname) || !isJobPage) {
-  // Not a Workday job detail page (requires /job/{id} or /details/{id}), or on an apply form — exit.
-  // No marker, no overlay, no scraping.
-  throw new Error("job-tracker-v2: not a Workday job posting page, exiting content script");
+if (!isWorkdayPage()) {
+  throw new Error("job-tracker-v2: not a Workday page, exiting content script");
 }
 
-// Track pending overlay timeouts so SPA navigation can cancel them.
+// ─── SPA-AWARE INITIALIZATION ────────────────────────────────────────────────
+// Workday is an SPA — navigating from search results to a job detail page uses
+// pushState, NOT a full page load. Chrome does NOT re-inject content scripts on
+// pushState navigation. Without this, the content script only works when users
+// navigate directly to a job detail URL (external link, browser refresh).
+//
+// Strategy:
+// - One-time setup: marker, message listener, pushState monkey-patch (runs once)
+// - Per-navigation setup: extract job data, cache to session storage, show overlay
+//   (runs on each SPA navigation to a new /job/{id} or /details/{id} page)
+
+// Track pending overlay/JD timeouts so SPA navigation can cancel them.
 let overlayTimeoutId = null;
+let jdTimeoutId = null;
+let _currentJobId = null;
+let _cachedCaptureData = null;
 
 function removeOverlayAndCancel() {
   if (overlayTimeoutId !== null) {
@@ -41,16 +51,22 @@ document.body.appendChild(marker);
 // ─── JOB ID EXTRACTION ───────────────────────────────────────────────────────
 // Extract the job ID segment from a Workday URL path.
 // Supports both /job/{location}/{id} and /details/{id} patterns.
-// e.g. /en-US/sdm_careers/job/.../Cashier_R2000648316 → "Cashier_R2000648316"
+// e.g. /en-US/sdm_careers/job/London/Cashier_R2000648316 → "Cashier_R2000648316"
 // e.g. /en-US/External/details/Software-Developer_R260004443-1 → "Software-Developer_R260004443-1"
 function extractJobId() {
   const p = window.location.pathname;
   // Try /details/{id} first (single segment after /details/)
   const detailsMatch = p.match(/\/details\/([^/?#]+)/);
   if (detailsMatch) return detailsMatch[1];
-  // Fall back to /job/{...}/{id} (last segment after /job/)
-  const jobMatch = p.match(/\/job\/([^/?#]+)/);
-  return jobMatch ? jobMatch[1] : null;
+  // Fall back to /job/{...}/{id} — take LAST segment after /job/ to skip location
+  // e.g. /job/London/Cashier_R2000648316 → "Cashier_R2000648316" (not "London")
+  // Must match background.js extractJobInfoFromUrl() which also takes last segment.
+  const jobMatch = p.match(/\/job\/(.+)/);
+  if (jobMatch) {
+    const segments = jobMatch[1].split("/").filter(Boolean);
+    return segments[segments.length - 1] || null;
+  }
+  return null;
 }
 
 // ─── JD EXTRACTION ────────────────────────────────────────────────────────────
@@ -156,31 +172,6 @@ function normalizeSourceUrl(url) {
   }
 }
 
-// ─── CACHED CAPTURE DATA ─────────────────────────────────────────────────────
-// Cache extraction results at load time (on the /job/{id} page). When Workday
-// SPA navigates to /apply/, the DOM changes but this content script stays alive.
-// background.js sends GET_CAPTURE_DATA to retrieve the cached snapshot.
-// JD extraction is deferred — Workday loads content dynamically after initial
-// render, so extracting immediately at script load often returns empty text.
-let _cachedCaptureData = {
-  company_name: guessCompanyFromPage(),
-  role: guessRoleFromPage(),
-  job_description: "",
-  source_url: normalizeSourceUrl(window.location.href),
-  ats_job_id: extractJobId(),
-};
-
-// Defer JD extraction until dynamic content has loaded (same delay as overlay).
-// Once extracted, persist to chrome.storage.session so background.js can read it
-// even if this content script becomes unreachable after SPA navigation to /apply/.
-setTimeout(() => {
-  _cachedCaptureData.job_description = extractJobDescription();
-  const jobId = extractJobId();
-  if (jobId) {
-    chrome.storage.session.set({ [`job_${jobId}`]: { ..._cachedCaptureData } });
-  }
-}, 1500);
-
 // ─── OVERLAY ──────────────────────────────────────────────────────────────────
 function alreadyShownForJob() {
   const jobId = extractJobId();
@@ -230,9 +221,62 @@ function maybeShowOverlay() {
   overlayTimeoutId = setTimeout(() => { overlay.remove(); overlayTimeoutId = null; }, 3000);
 }
 
-// Clean up overlay on browser back/forward navigation.
-window.addEventListener("popstate", removeOverlayAndCancel);
+// ─── PER-NAVIGATION INITIALIZATION ──────────────────────────────────────────
+// Called on initial load AND on each SPA pushState/replaceState navigation.
+// Checks if we're on a job detail page and initializes data extraction + overlay.
+function tryInitForCurrentUrl() {
+  const pathname = window.location.pathname;
 
+  // On /apply/ or non-job pages, just clean up any existing overlay
+  if (/\/apply(\/|$)/.test(pathname)) {
+    removeOverlayAndCancel();
+    return;
+  }
+
+  const isJobPage = /\/job\/[^/]/.test(pathname) || /\/details\/[^/]/.test(pathname);
+  if (!isJobPage) {
+    removeOverlayAndCancel();
+    return;
+  }
+
+  // On a job detail page — check if it's a new job
+  const jobId = extractJobId();
+  if (!jobId || jobId === _currentJobId) return;
+  _currentJobId = jobId;
+
+  // Cancel any pending timeouts from previous job page
+  removeOverlayAndCancel();
+  if (jdTimeoutId !== null) {
+    clearTimeout(jdTimeoutId);
+    jdTimeoutId = null;
+  }
+
+  // Extract capture data for this job
+  _cachedCaptureData = {
+    company_name: guessCompanyFromPage(),
+    role: guessRoleFromPage(),
+    job_description: "",
+    source_url: normalizeSourceUrl(window.location.href),
+    ats_job_id: jobId,
+  };
+
+  console.log("[job-tracker-v2] initialized for job:", jobId, _cachedCaptureData.source_url);
+
+  // Defer JD extraction until dynamic content has loaded.
+  // Once extracted, persist to chrome.storage.session so background.js can read it
+  // even if this content script becomes unreachable after SPA navigation to /apply/.
+  jdTimeoutId = setTimeout(() => {
+    jdTimeoutId = null;
+    _cachedCaptureData.job_description = extractJobDescription();
+    chrome.storage.session.set({ [`job_${jobId}`]: { ..._cachedCaptureData } });
+    console.log("[job-tracker-v2] cached to session storage:", `job_${jobId}`);
+  }, 1500);
+
+  // Show overlay after DOM settles
+  overlayTimeoutId = setTimeout(maybeShowOverlay, 1500);
+}
+
+// ─── MESSAGE LISTENER (one-time) ────────────────────────────────────────────
 // Listen for HIDE_OVERLAY from background.js (triggered by chrome.tabs.onUpdated
 // when Workday SPA navigates to /apply/ via pushState).
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -244,11 +288,30 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 });
 
-// Wait for DOM to settle before checking (1.5s covers lazy-rendered ATS pages)
+// ─── SPA NAVIGATION DETECTION ───────────────────────────────────────────────
+// Workday uses pushState for in-app navigation. Chrome content scripts only
+// inject on full page loads, not pushState. Monkey-patch history methods to
+// detect SPA navigations and re-initialize when the user reaches a job page.
+const _origPushState = history.pushState;
+history.pushState = function(...args) {
+  _origPushState.apply(this, args);
+  tryInitForCurrentUrl();
+};
+
+const _origReplaceState = history.replaceState;
+history.replaceState = function(...args) {
+  _origReplaceState.apply(this, args);
+  tryInitForCurrentUrl();
+};
+
+window.addEventListener("popstate", () => tryInitForCurrentUrl());
+
+// ─── INITIAL RUN ────────────────────────────────────────────────────────────
+// Run initialization for the current URL. If we're on a job page, this extracts
+// data and shows the overlay. If not (e.g. search page), it's a no-op — but the
+// pushState monkey-patch above will catch future SPA navigations to job pages.
 if (document.readyState === "complete" || document.readyState === "interactive") {
-  overlayTimeoutId = setTimeout(maybeShowOverlay, 1500);
+  tryInitForCurrentUrl();
 } else {
-  document.addEventListener("DOMContentLoaded", () => {
-    overlayTimeoutId = setTimeout(maybeShowOverlay, 1500);
-  });
+  document.addEventListener("DOMContentLoaded", () => tryInitForCurrentUrl());
 }
