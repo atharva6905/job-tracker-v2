@@ -1,17 +1,12 @@
 // ─── WORKDAY-ONLY GUARD ───────────────────────────────────────────────────────
-// Content script only runs on Workday pages (manifest matches restrict injection,
-// but guard as defense-in-depth + meta tag fallback).
-const WORKDAY_URL_PATTERNS = [
-  /\.wd\d+\.myworkdayjobs\.com/,
-  /\.myworkday\.com/,
-  /\.myworkdaysite\.com/
-];
-
+// Content script only runs on Workday pages. manifest.json already restricts
+// injection to *.myworkdayjobs.com, *.myworkday.com, *.myworkdaysite.com — this
+// guard is defense-in-depth. Hostname check covers all Workday subdomain formats
+// (bmo.wd3.myworkdayjobs.com, company.myworkday.com, etc.).
 function isWorkdayPage() {
-  const url = window.location.href.toLowerCase();
-  if (WORKDAY_URL_PATTERNS.some(p => p.test(url))) return true;
   const meta = document.querySelector('meta[name="application-name"]');
-  return meta?.content?.toLowerCase() === "workday";
+  if (meta?.content?.toLowerCase() === "workday") return true;
+  return /\.(myworkdayjobs|myworkday|myworkdaysite)\.com$/i.test(window.location.hostname);
 }
 
 const pathname = window.location.pathname;
