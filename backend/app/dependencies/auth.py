@@ -36,19 +36,35 @@ _JWKS_TTL = 3600.0  # seconds
 
 
 def _get_jwks_key(kid: str) -> dict:
-    """Return the JWKS public key matching kid, refreshing the cache if stale."""
+    """Return the JWKS public key matching kid, refreshing the cache if stale.
+
+    If the kid is not found in the cached keyset, force a one-time refresh
+    before giving up — handles Supabase key rotation without waiting for TTL.
+    """
     global _jwks_keys, _jwks_fetched_at
+
+    def _refresh() -> None:
+        global _jwks_keys, _jwks_fetched_at
+        resp = httpx.get(
+            f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json",
+            timeout=10.0,
+        )
+        resp.raise_for_status()
+        _jwks_keys = resp.json().get("keys", [])
+        _jwks_fetched_at = time.monotonic()
 
     now = time.monotonic()
     with _jwks_lock:
         if not _jwks_keys or (now - _jwks_fetched_at) > _JWKS_TTL:
-            resp = httpx.get(
-                f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json",
-                timeout=10.0,
-            )
-            resp.raise_for_status()
-            _jwks_keys = resp.json().get("keys", [])
-            _jwks_fetched_at = now
+            _refresh()
+
+    for key in _jwks_keys:
+        if key.get("kid") == kid:
+            return key
+
+    # kid not found — force refresh once (handles key rotation mid-TTL)
+    with _jwks_lock:
+        _refresh()
 
     for key in _jwks_keys:
         if key.get("kid") == kid:
