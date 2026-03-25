@@ -353,7 +353,10 @@ def poll_gmail_account(
             raw_email.gemini_signal = classification.signal
             raw_email.gemini_confidence = classification.confidence
             raw_email.gemini_company = classification.company
-            db.commit()
+            # Do NOT commit here — defer until after process_email_signal so the
+            # signal update and linked_application_id write are in one transaction.
+            # process_email_signal calls db.commit() internally via _apply_transition.
+            # If the signal is not actionable or no match, commit the signal update below.
             _logger.info(
                 "PARSE_ERROR email reclassified",
                 extra={
@@ -395,8 +398,10 @@ def poll_gmail_account(
                     retry_tenant = extract_tenant_from_sender(raw_email.sender or "")
                     tenant_matches = bool(retry_tenant and retry_tenant in active_tenants)
                 if company_matches or ats_matches or tenant_matches:
+                    # process_email_signal commits signal + linked_application_id together
                     process_email_signal(db, account.user_id, raw_email, classification)
                 else:
+                    db.commit()  # commit signal update only (no match to link)
                     _logger.info(
                         "PARSE_ERROR retry: no active application match — skipping",
                         extra={
@@ -406,6 +411,8 @@ def poll_gmail_account(
                             "action_taken": "no_in_progress_match",
                         },
                     )
+            else:
+                db.commit()  # commit signal update for non-actionable results
 
         # Cleanup — purge orphaned PARSE_ERROR rows older than 30 days.
         # These are emails Gemini permanently failed on and that were never
