@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/components/auth-provider";
@@ -31,7 +31,7 @@ const CORRECTABLE_STATUSES: { value: ApplicationStatus; label: string }[] = [
 
 function DeadlineBanner({ deadline, status }: { deadline: string; status: ApplicationStatus }) {
   if (status !== "IN_PROGRESS") return null;
-  const deadlineDate = new Date(deadline);
+  const deadlineDate = new Date(deadline + "T00:00:00");
   const now = new Date();
   const diffMs = deadlineDate.getTime() - now.getTime();
   const diffDays = diffMs / (1000 * 60 * 60 * 24);
@@ -154,6 +154,14 @@ export default function ApplicationDetailPage() {
   const [deleting, setDeleting] = useState(false);
   const [structuring, setStructuring] = useState(false);
   const [pollingForStructure, setPollingForStructure] = useState(false);
+  const structureIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Cleanup manual structure polling on unmount
+  useEffect(() => {
+    return () => {
+      if (structureIntervalRef.current) clearInterval(structureIntervalRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (authLoading || !user) return;
@@ -267,17 +275,21 @@ export default function ApplicationDetailPage() {
             setJobDescription(jd);
             setStructuring(false);
             clearInterval(interval);
+            structureIntervalRef.current = null;
           } else if (attempts >= maxAttempts) {
             // Timeout — fall back to raw text with retry button
             if (jd) setJobDescription(jd);
             setStructuring(false);
             clearInterval(interval);
+            structureIntervalRef.current = null;
           }
         } catch {
           setStructuring(false);
           clearInterval(interval);
+          structureIntervalRef.current = null;
         }
       }, 3000);
+      structureIntervalRef.current = interval;
     } catch {
       setStructuring(false);
     }
