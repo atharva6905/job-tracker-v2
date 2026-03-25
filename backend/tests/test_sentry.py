@@ -1,6 +1,4 @@
 """Smoke test: Sentry integration is wired into FastAPI."""
-import os
-from unittest.mock import patch
 
 
 class TestSentryIntegration:
