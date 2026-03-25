@@ -36,6 +36,7 @@ class RawEmail(Base):
     body_snippet: Mapped[str | None] = mapped_column(Text, nullable=True)
     gemini_signal: Mapped[str | None] = mapped_column(String(50), nullable=True)
     gemini_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    gemini_company: Mapped[str | None] = mapped_column(String(255), nullable=True)
     linked_application_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("applications.id", ondelete="SET NULL"),

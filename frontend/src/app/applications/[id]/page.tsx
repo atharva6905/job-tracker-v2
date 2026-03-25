@@ -7,10 +7,18 @@ import { useAuth } from "@/components/auth-provider";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Select, SelectItem } from "@/components/ui/select";
 import { fetchAPI } from "@/lib/api";
 import type { Application, ApplicationStatus, Company, JobDescription } from "@/lib/types";
-import { ArrowLeft, ExternalLink } from "lucide-react";
+import { ArrowLeft, ExternalLink, Trash2 } from "lucide-react";
 import { EmailTimeline } from "@/components/EmailTimeline";
 
 const CORRECTABLE_STATUSES: { value: ApplicationStatus; label: string }[] = [
@@ -29,6 +37,8 @@ export default function ApplicationDetailPage() {
   const [jobDescription, setJobDescription] = useState<JobDescription | null>(null);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (authLoading || !user) return;
@@ -71,6 +81,18 @@ export default function ApplicationDetailPage() {
       // Could show error toast here
     } finally {
       setUpdating(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await fetchAPI(`/applications/${params.id}`, { method: "DELETE" });
+      router.push("/dashboard");
+    } catch {
+      // Keep dialog open on error so user can retry
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -220,7 +242,53 @@ export default function ApplicationDetailPage() {
         </Card>
 
         <EmailTimeline applicationId={params.id} />
+
+        {/* Danger zone */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Danger Zone</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Button
+              variant="destructive"
+              onClick={() => setDeleteDialogOpen(true)}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete application
+            </Button>
+          </CardContent>
+        </Card>
       </main>
+
+      <Dialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+      >
+        <DialogContent onClose={() => setDeleteDialogOpen(false)}>
+          <DialogHeader>
+            <DialogTitle>Delete this application?</DialogTitle>
+            <DialogDescription>
+              This cannot be undone. You can re-track it by visiting the job
+              posting again.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={deleting}
+            >
+              {deleting ? "Deleting..." : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

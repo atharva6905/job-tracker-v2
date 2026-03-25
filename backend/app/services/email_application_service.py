@@ -20,8 +20,9 @@ from sqlalchemy.orm import Session
 
 from app.models.application import Application, ApplicationStatus
 from app.models.company import Company
+from app.models.email_account import EmailAccount
 from app.models.raw_email import RawEmail
-from app.services.gemini_service import GeminiClassificationResult
+from app.services.gemini_service import ACTIONABLE_SIGNALS, GeminiClassificationResult
 from app.utils.company import normalize_company_name
 from app.utils.logging import get_logger
 from app.utils.workday import extract_tenant_from_sender
@@ -89,6 +90,98 @@ def process_email_signal(
                 "gemini_signal": signal,
                 "action_taken": "no_in_progress_match",
                 "user_id": str(user_id),
+            },
+        )
+
+
+def replay_matched_emails(db: Session, application: Application) -> None:
+    """Replay previously classified but unlinked emails against a new application.
+
+    Called immediately after POST /extension/capture creates a new IN_PROGRESS
+    application. Finds emails that match this application (by R-number, Workday
+    tenant, or normalized company name) and replays them in chronological order
+    to fast-forward the status.
+    """
+    user_id = application.user_id
+
+    # Load company for normalized name matching
+    company = db.scalar(
+        select(Company).where(Company.id == application.company_id)
+    )
+    normalized_company = company.normalized_name if company else ""
+
+    # Extract R-number from ats_job_id if present
+    r_match = _ATS_JOB_ID_RE.search(application.ats_job_id or "")
+    r_number = r_match.group(0) if r_match else None
+
+    tenant = application.workday_tenant
+
+    # Query all unlinked actionable emails for this user
+    candidates = db.scalars(
+        select(RawEmail)
+        .join(EmailAccount, RawEmail.email_account_id == EmailAccount.id)
+        .where(
+            EmailAccount.user_id == user_id,
+            RawEmail.linked_application_id.is_(None),
+            RawEmail.gemini_signal.in_(ACTIONABLE_SIGNALS),
+            RawEmail.gemini_confidence >= 0.75,
+        )
+        .order_by(RawEmail.received_at.asc())
+    ).all()
+
+    # Filter in Python for any of the 3 match conditions
+    seen_ids: set[str] = set()
+    matched: list[RawEmail] = []
+    for email in candidates:
+        if email.gmail_message_id in seen_ids:
+            continue
+
+        hit = False
+        # Condition 1: R-number in subject
+        if r_number and email.subject and r_number in email.subject:
+            hit = True
+        # Condition 2: Workday tenant in sender
+        if not hit and tenant and email.sender:
+            if f"{tenant}@myworkday" in email.sender.lower():
+                hit = True
+        # Condition 3: Normalized company name
+        if not hit and email.gemini_company and normalized_company:
+            if normalize_company_name(email.gemini_company) == normalized_company:
+                hit = True
+
+        if hit:
+            seen_ids.add(email.gmail_message_id)
+            matched.append(email)
+
+    replayed = 0
+    for raw_email in matched:
+        classification = GeminiClassificationResult(
+            company=raw_email.gemini_company,
+            role=None,
+            signal=raw_email.gemini_signal,
+            confidence=raw_email.gemini_confidence,
+        )
+        try:
+            process_email_signal(db, user_id, raw_email, classification)
+            replayed += 1
+        except Exception:
+            _logger.warning(
+                "Replay failed for email",
+                exc_info=True,
+                extra={
+                    "gmail_message_id": raw_email.gmail_message_id,
+                    "application_id": str(application.id),
+                    "action_taken": "replay_error",
+                },
+            )
+
+    if replayed:
+        _logger.info(
+            "Replayed matched emails for re-tracked application",
+            extra={
+                "application_id": str(application.id),
+                "replayed_count": replayed,
+                "action_taken": "replay_complete",
             },
         )
 

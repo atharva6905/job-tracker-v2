@@ -290,6 +290,7 @@ def poll_gmail_account(
                     body_snippet=body_snippet,
                     gemini_signal=classification.signal,
                     gemini_confidence=classification.confidence,
+                    gemini_company=classification.company,
                 )
                 try:
                     db.add(raw_email)
@@ -347,6 +348,7 @@ def poll_gmail_account(
             )
             raw_email.gemini_signal = classification.signal
             raw_email.gemini_confidence = classification.confidence
+            raw_email.gemini_company = classification.company
             db.commit()
             _logger.info(
                 "PARSE_ERROR email reclassified",

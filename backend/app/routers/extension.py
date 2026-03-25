@@ -12,6 +12,7 @@ from app.models.job_description import JobDescription
 from app.models.user import User
 from app.schemas.extension import ExtensionCaptureRequest, ExtensionCaptureResponse
 from app.services.company_service import find_or_create_company
+from app.services.email_application_service import replay_matched_emails
 from app.utils.workday import extract_workday_tenant
 
 router = APIRouter(prefix="/extension", tags=["extension"])
@@ -71,6 +72,7 @@ def capture_application(
     db.flush()
     db.add(JobDescription(application_id=application.id, raw_text=body.job_description))
     db.commit()
+    replay_matched_emails(db, application)
     db.refresh(application)
     return ExtensionCaptureResponse(
         application_id=application.id,
