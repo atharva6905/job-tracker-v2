@@ -290,19 +290,22 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
 // ─── SPA NAVIGATION DETECTION ───────────────────────────────────────────────
 // Workday uses pushState for in-app navigation. Chrome content scripts only
-// inject on full page loads, not pushState. Monkey-patch history methods to
-// detect SPA navigations and re-initialize when the user reaches a job page.
-const _origPushState = history.pushState;
-history.pushState = function(...args) {
-  _origPushState.apply(this, args);
-  tryInitForCurrentUrl();
-};
-
-const _origReplaceState = history.replaceState;
-history.replaceState = function(...args) {
-  _origReplaceState.apply(this, args);
-  tryInitForCurrentUrl();
-};
+// inject on full page loads, not pushState.
+//
+// Content scripts run in an "isolated world" — monkey-patching history.pushState
+// in the content script does NOT intercept pushState from page code. Injecting a
+// <script> tag into the main world is blocked by Workday's CSP.
+//
+// Reliable fallback: poll location.href on a short interval. This works across
+// all CSP policies and isolated world boundaries. The poll runs only while the
+// tab is on a Workday domain (already guaranteed by manifest.json).
+let _lastHref = window.location.href;
+setInterval(() => {
+  if (window.location.href !== _lastHref) {
+    _lastHref = window.location.href;
+    tryInitForCurrentUrl();
+  }
+}, 500);
 
 window.addEventListener("popstate", () => tryInitForCurrentUrl());
 

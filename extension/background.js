@@ -5,6 +5,12 @@
 // Also update manifest.json host_permissions and externally_connectable matches.
 const API_BASE = "https://job-tracker-v2-kappa.vercel.app/api";
 
+// ─── SESSION STORAGE ACCESS ─────────────────────────────────────────────────
+// By default, chrome.storage.session is only accessible from trusted contexts
+// (background script, popup). Content scripts need TRUSTED_AND_UNTRUSTED_CONTEXTS
+// to read/write session storage for caching job data.
+chrome.storage.session.setAccessLevel({ accessLevel: "TRUSTED_AND_UNTRUSTED_CONTEXTS" });
+
 // ─── URL HELPERS ─────────────────────────────────────────────────────────────
 
 /**
