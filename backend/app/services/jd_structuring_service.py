@@ -104,7 +104,31 @@ def structure_job_description(db: Session, job_description_id: str) -> None:
     """
     Load a JobDescription by ID, call Gemini to extract structured fields,
     and write to structured_jd. Idempotent — skips if already populated.
+
+    Called as a FastAPI BackgroundTask — must catch all exceptions because
+    BackgroundTasks swallow them silently (no log, no Sentry event).
     """
+    try:
+        _structure_job_description_inner(db, job_description_id)
+    except Exception as exc:
+        _logger.error(
+            "Background JD structuring failed",
+            exc_info=True,
+            extra={
+                "job_description_id": str(job_description_id),
+                "action_taken": "background_task_error",
+                "error_type": type(exc).__name__,
+            },
+        )
+        try:
+            import sentry_sdk
+            sentry_sdk.capture_exception(exc)
+        except Exception:
+            pass
+
+
+def _structure_job_description_inner(db: Session, job_description_id: str) -> None:
+    """Inner implementation — called by structure_job_description wrapper."""
     jd = db.get(JobDescription, job_description_id)
     if not jd:
         _logger.warning(
