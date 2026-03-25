@@ -1,0 +1,7 @@
+# Replace YOUR_DOMAIN with your actual domain (e.g., api.jobtracker.example.com).
+# Caddy automatically obtains and renews Let's Encrypt TLS certificates.
+# HTTP requests are automatically redirected to HTTPS.
+
+{$BACKEND_DOMAIN:localhost} {
+    reverse_proxy backend:8000
+}

@@ -2,6 +2,8 @@ import os
 from contextlib import asynccontextmanager
 
 import sentry_sdk
+from sentry_sdk.integrations.starlette import StarletteIntegration
+from sentry_sdk.integrations.fastapi import FastApiIntegration
 from apscheduler.events import EVENT_JOB_ERROR, JobExecutionEvent
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
@@ -28,7 +30,11 @@ load_dotenv()
 
 _sentry_dsn = os.getenv("SENTRY_DSN")
 if _sentry_dsn:
-    sentry_sdk.init(dsn=_sentry_dsn, traces_sample_rate=0.1)
+    sentry_sdk.init(
+        dsn=_sentry_dsn,
+        traces_sample_rate=0.1,
+        integrations=[StarletteIntegration(), FastApiIntegration()],
+    )
 
 _logger = get_logger("api")
 

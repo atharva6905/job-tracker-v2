@@ -1,0 +1,33 @@
+# Production deployment: Caddy handles TLS termination + HTTP→HTTPS redirect.
+# Usage:
+#   BACKEND_DOMAIN=api.example.com docker compose up -d
+#
+# Caddy automatically obtains Let's Encrypt certificates for BACKEND_DOMAIN.
+# The backend container is not exposed to the internet — only Caddy reaches it.
+
+services:
+  backend:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    expose:
+      - "8000"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      - BACKEND_DOMAIN=${BACKEND_DOMAIN:?Set BACKEND_DOMAIN to your domain}
+    depends_on:
+      - backend
+
+volumes:
+  caddy_data:
+  caddy_config:

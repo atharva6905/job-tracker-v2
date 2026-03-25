@@ -57,12 +57,96 @@ GitHub Actions runs on every push/PR to `main`:
 
 ## Production Deployment
 
-**Backend** runs on a DigitalOcean Droplet via Docker:
+### Database connection strings
+
+The backend uses **two** PostgreSQL connection strings — mixing them up is the most common setup mistake:
+
+| Variable | Port | Used by | Notes |
+|----------|------|---------|-------|
+| `DATABASE_URL` | 6543 | FastAPI runtime (SQLAlchemy) | PgBouncer pooled — **runtime only** |
+| `DATABASE_URL_DIRECT` | 5432 | Alembic migrations | Direct — **never use at runtime** |
+
+PgBouncer (port 6543) does not support the DDL transactions Alembic requires. Swapping these will silently fail migrations or exhaust the connection pool.
+
+### Initial Droplet setup
+
+1. SSH into the Droplet and install Docker:
+
+```bash
+curl -fsSL https://get.docker.com | sh
+```
+
+2. Clone the repo and configure env vars:
+
+```bash
+git clone <repo-url> && cd job-tracker-v2/backend
+cp .env.example .env
+# Edit .env — fill in all values (DATABASE_URL, SENTRY_DSN, etc.)
+```
+
+3. Deploy with docker compose (recommended — includes Caddy for automatic HTTPS):
+
+```bash
+BACKEND_DOMAIN=api.example.com docker compose up -d --build
+```
+
+Caddy automatically obtains a Let's Encrypt TLS certificate and redirects HTTP to HTTPS. The backend container is not exposed to the internet directly.
+
+**Alternative (bare Docker, no TLS)** — only for testing or if TLS is handled externally:
 
 ```bash
 docker build -t job-tracker-backend .
 docker run -d --restart unless-stopped -p 80:8000 --env-file .env job-tracker-backend
 ```
+
+4. Run the initial migration:
+
+```bash
+docker compose exec backend alembic upgrade head
+```
+
+### Deploying an update
+
+```bash
+cd job-tracker-v2
+git pull origin main
+cd backend
+docker compose up -d --build
+docker compose exec backend alembic upgrade head
+```
+
+### Viewing logs
+
+```bash
+# All services
+docker compose logs -f
+
+# Backend only
+docker compose logs -f backend
+
+# Bare Docker (no compose)
+docker logs job-tracker-backend -f
+```
+
+### Running migrations on the Droplet
+
+```bash
+# With docker compose
+docker compose exec backend alembic upgrade head
+
+# Bare Docker
+docker exec job-tracker-backend alembic upgrade head
+```
+
+### Fernet key rotation
+
+See `SECURITY.md` for the token encryption key rotation procedure.
+
+### DigitalOcean credits
+
+This project uses a DigitalOcean Droplet funded by the GitHub Student Pack ($200 credit). Check the credit expiry date in the DigitalOcean billing dashboard and plan accordingly before it runs out.
+
+### Frontend
 
 **Frontend** deploys to Vercel. Set `NEXT_PUBLIC_API_BASE_URL` to the Droplet's HTTPS URL.
 
