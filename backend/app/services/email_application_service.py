@@ -22,7 +22,7 @@ from app.models.application import Application, ApplicationStatus
 from app.models.company import Company
 from app.models.email_account import EmailAccount
 from app.models.raw_email import RawEmail
-from app.services.gemini_service import ACTIONABLE_SIGNALS, GeminiClassificationResult
+from app.services.gemini_service import GeminiClassificationResult
 from app.utils.company import normalize_company_name
 from app.utils.logging import get_logger
 from app.utils.workday import extract_tenant_from_sender
