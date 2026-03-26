@@ -109,17 +109,58 @@ function extractJobDescription() {
     .substring(0, 50000); // Hard cap — matches backend ExtensionCaptureRequest.job_description max_length
 }
 
+// Extract role title from the URL slug (job ID segment before the R-number).
+// Workday encodes punctuation as multi-hyphen sequences:
+//   ---- → " - ", --- → " - ", -- → ", ", - → " "
+// e.g. "Software-Developer--Summer-2026---Co-op-Internship----10-Weeks_R260004443-1"
+//    → "Software Developer, Summer 2026 - Co op Internship - 10 Weeks"
+function extractRoleFromUrlSlug() {
+  const jobId = extractJobId();
+  if (!jobId) return null;
+  // Strip R-number suffix: _R260004443-1, _JR26-27660, etc.
+  const cleaned = jobId.replace(/_?[A-Z]?R\d[\d-]*$/, "");
+  if (!cleaned) return null;
+  // Decode multi-hyphen sequences (longest first to avoid partial matches)
+  return cleaned
+    .replace(/----/g, " - ")
+    .replace(/---/g, " - ")
+    .replace(/--/g, ", ")
+    .replace(/-/g, " ")
+    .trim() || null;
+}
+
+// Known Workday navigation headings that should never be used as role titles.
+const SKIP_H1_TEXT = ["search for jobs", "search jobs", "job search", "careers", "home"];
+
 function guessRoleFromPage() {
+  // Priority 1: Workday data-automation-id selector (most reliable when present)
   const wdHeader = document.querySelector('[data-automation-id="jobPostingHeader"]')?.textContent?.trim();
-  const h1 = document.querySelector("h1")?.textContent?.trim() || "";
+  // Priority 2: URL slug decode (always available, reasonably accurate)
+  const slugRole = extractRoleFromUrlSlug();
+  // Priority 3: first non-navigation h1
+  const h1s = document.querySelectorAll("h1");
+  let h1Text = null;
+  for (const h1 of h1s) {
+    const text = h1.textContent?.trim();
+    if (text && !SKIP_H1_TEXT.includes(text.toLowerCase())) {
+      h1Text = text;
+      break;
+    }
+  }
+  // Priority 4: document title
   const title = document.title || "";
+
   console.log("[job-tracker-v2] guessRole selectors:", {
     wdHeader: wdHeader || null,
-    h1: h1 || null,
+    slugRole: slugRole || null,
+    h1: h1Text || null,
     documentTitle: title || null,
   });
+
   if (wdHeader) return wdHeader.substring(0, 255);
-  return (h1 || title).substring(0, 255);
+  if (slugRole) return slugRole.substring(0, 255);
+  if (h1Text) return h1Text.substring(0, 255);
+  return title.substring(0, 255) || "Unknown Role";
 }
 
 function guessCompanyFromPage() {

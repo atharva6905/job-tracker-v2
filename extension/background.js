@@ -86,7 +86,14 @@ function roleFromUrl(jobId) {
   if (!jobId) return "Unknown Role";
   // Strip trailing R-number pattern (e.g. _JR26-27660, _R2000648316)
   const cleaned = jobId.replace(/_?[A-Z]?R\d[\d-]*$/, "");
-  return cleaned.replace(/[-_]/g, " ").trim() || "Unknown Role";
+  if (!cleaned) return "Unknown Role";
+  // Decode Workday multi-hyphen sequences (longest first)
+  return cleaned
+    .replace(/----/g, " - ")
+    .replace(/---/g, " - ")
+    .replace(/--/g, ", ")
+    .replace(/-/g, " ")
+    .trim() || "Unknown Role";
 }
 
 // ─── SESSION STORAGE POLL ────────────────────────────────────────────────────
