@@ -82,6 +82,7 @@ export function SetupChecklist() {
       <div className="flex items-center justify-between mb-3">
         <h3 className="font-display text-lg font-semibold">Get started</h3>
         <button
+          type="button"
           onClick={handleDismiss}
           className="p-1 text-muted-foreground hover:text-foreground transition-colors"
         >

@@ -106,6 +106,7 @@ export default function DashboardPage() {
               <Settings className="h-4 w-4" />
             </Link>
             <button
+              type="button"
               onClick={signOut}
               className="p-2 text-muted-foreground hover:text-foreground transition-colors"
             >
@@ -141,6 +142,7 @@ export default function DashboardPage() {
           <div className="flex items-center gap-1">
             {STATUS_FILTERS.map(({ value, label }) => (
               <button
+                type="button"
                 key={value}
                 onClick={() => setStatusFilter(value)}
                 className={`px-3 py-1.5 text-[11px] font-medium uppercase tracking-editorial transition-colors ${
@@ -155,12 +157,14 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Row count */}
-        <div className="mb-3">
-          <span className="font-mono text-xs text-muted-foreground tabular-nums">
-            {filtered.length} application{filtered.length !== 1 ? "s" : ""}
-          </span>
-        </div>
+        {/* Row count — hidden during loading to avoid showing "0 applications" before data arrives */}
+        {!dataLoading && applications.length > 0 && (
+          <div className="mb-3">
+            <span className="font-mono text-xs text-muted-foreground tabular-nums">
+              {filtered.length} application{filtered.length !== 1 ? "s" : ""}
+            </span>
+          </div>
+        )}
 
         {dataLoading ? (
           <div className="py-16 text-center">
@@ -236,6 +240,7 @@ export default function DashboardPage() {
                       </td>
                       <td className="py-3.5 text-center">
                         <button
+                          type="button"
                           onClick={() =>
                             setJdSheet({
                               open: true,

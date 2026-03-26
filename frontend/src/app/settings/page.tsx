@@ -158,6 +158,7 @@ export default function SettingsPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <button
+                      type="button"
                       disabled={resyncingId === account.id}
                       onClick={() => handleResync(account.id)}
                       title="Re-sync emails from the last 30 days"
@@ -167,6 +168,7 @@ export default function SettingsPage() {
                       {resyncingId === account.id ? "Syncing..." : "Re-sync"}
                     </button>
                     <button
+                      type="button"
                       onClick={() => setDisconnectId(account.id)}
                       className="inline-flex items-center rounded-md border border-border/50 px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
                     >
@@ -178,6 +180,7 @@ export default function SettingsPage() {
             </div>
           )}
           <button
+            type="button"
             onClick={handleConnectGmail}
             className="inline-flex items-center justify-center w-full rounded-md bg-foreground text-background px-4 py-2.5 text-sm font-medium transition-colors hover:bg-foreground/90"
           >
@@ -194,6 +197,7 @@ export default function SettingsPage() {
           <div className="space-y-4">
             <div>
               <button
+                type="button"
                 onClick={handleExport}
                 disabled={exporting}
                 className="inline-flex items-center justify-center w-full rounded-md border border-border/50 px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
@@ -208,6 +212,7 @@ export default function SettingsPage() {
 
             <div>
               <button
+                type="button"
                 onClick={() => setDeleteDialogOpen(true)}
                 className="inline-flex items-center justify-center w-full rounded-md bg-destructive/10 border border-destructive/20 text-destructive px-4 py-2.5 text-sm font-medium transition-colors hover:bg-destructive/20"
               >

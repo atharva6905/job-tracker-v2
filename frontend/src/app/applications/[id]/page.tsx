@@ -452,6 +452,7 @@ export default function ApplicationDetailPage() {
                     </pre>
                   </div>
                   <button
+                    type="button"
                     className="mt-3 rounded-md border border-border/50 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
                     onClick={handleStructureJD}
                     disabled={structuring}
@@ -477,6 +478,7 @@ export default function ApplicationDetailPage() {
             Danger Zone
           </h2>
           <button
+            type="button"
             onClick={() => setDeleteDialogOpen(true)}
             className="inline-flex items-center rounded-md bg-destructive/10 border border-destructive/20 text-destructive px-4 py-2 text-sm font-medium transition-colors hover:bg-destructive/20"
           >
