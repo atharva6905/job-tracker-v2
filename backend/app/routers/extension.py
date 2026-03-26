@@ -36,6 +36,46 @@ def capture_application(
     company = find_or_create_company(db, current_user.id, body.company_name)
     normalized_url = normalize_source_url(body.source_url)
 
+    # Restore: if a soft-deleted application exists for this (user, source_url),
+    # restore it instead of creating a new one.
+    if normalized_url:
+        deleted_app = db.scalar(
+            select(Application).where(
+                Application.user_id == current_user.id,
+                Application.source_url == normalized_url,
+                Application.deleted_at.isnot(None),
+            )
+        )
+        if deleted_app:
+            deleted_app.deleted_at = None
+            deleted_app.company_id = company.id
+            deleted_app.role = body.role
+            deleted_app.ats_job_id = body.ats_job_id
+            deleted_app.workday_tenant = extract_workday_tenant(body.source_url)
+            if body.job_description.strip():
+                jd = db.scalar(
+                    select(JobDescription).where(
+                        JobDescription.application_id == deleted_app.id
+                    )
+                )
+                if jd:
+                    jd.raw_text = body.job_description
+                    jd.captured_at = datetime.now(timezone.utc)
+                else:
+                    db.add(
+                        JobDescription(
+                            application_id=deleted_app.id,
+                            raw_text=body.job_description,
+                        )
+                    )
+            db.commit()
+            return ExtensionCaptureResponse(
+                application_id=deleted_app.id,
+                company_id=deleted_app.company_id,
+                status=deleted_app.status.value,
+                message="restored",
+            )
+
     # Dedup: if an IN_PROGRESS application exists for this (user, source_url),
     # update its job description and return it — don't create a duplicate.
     existing = db.scalar(
@@ -43,6 +83,7 @@ def capture_application(
             Application.user_id == current_user.id,
             Application.source_url == normalized_url,
             Application.status == ApplicationStatus.IN_PROGRESS,
+            Application.deleted_at.is_(None),
         )
     )
 
@@ -110,6 +151,7 @@ def mark_applied(
             Application.user_id == current_user.id,
             Application.source_url == normalize_source_url(body.source_url),
             Application.status == ApplicationStatus.IN_PROGRESS,
+            Application.deleted_at.is_(None),
         )
     )
     if not application:

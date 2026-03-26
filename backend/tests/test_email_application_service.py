@@ -699,3 +699,83 @@ class TestJaccardSimilarity:
         process_email_signal(db, test_user.id, raw_email, classification)
 
         assert raw_email.linked_application_id is None
+
+
+class TestSoftDeleteEmailMatching:
+    """Soft-deleted applications must be invisible to email matching."""
+
+    def test_soft_deleted_app_not_matched_by_email(self, db, test_user, email_account):
+        """Soft-deleted application is invisible to _find_matching_application."""
+        company = _make_company(db, test_user.id)
+        app = _make_application(
+            db, test_user.id, company.id, ApplicationStatus.APPLIED,
+        )
+        app.deleted_at = datetime(2026, 3, 20, tzinfo=timezone.utc)
+        db.flush()
+
+        raw_email = _make_raw_email(
+            db, email_account, gemini_signal="INTERVIEW", gemini_confidence=0.90,
+        )
+
+        classification = GeminiClassificationResult(
+            company="Acme Corp",
+            role="Software Engineer",
+            signal="INTERVIEW",
+            confidence=0.90,
+        )
+
+        process_email_signal(db, test_user.id, raw_email, classification)
+
+        db.refresh(app)
+        assert app.status == ApplicationStatus.APPLIED  # unchanged
+        assert raw_email.linked_application_id is None
+
+
+class TestReplaySignalFiltering:
+    """replay_matched_emails must skip APPLIED signals."""
+
+    def test_replay_skips_applied_signal(self, db, test_user, email_account):
+        """APPLIED emails in raw_emails are not replayed."""
+        from app.services.email_application_service import replay_matched_emails
+
+        company = _make_company(db, test_user.id)
+        app = _make_application(
+            db, test_user.id, company.id, ApplicationStatus.IN_PROGRESS,
+            source_url="https://acme.wd5.myworkdayjobs.com/en-US/careers/job/Eng_R123",
+        )
+
+        # Create an unlinked APPLIED email matching the company
+        raw_email = _make_raw_email(
+            db, email_account,
+            gemini_signal="APPLIED", gemini_confidence=0.95,
+        )
+        raw_email.gemini_company = "Acme Corp"
+        db.flush()
+
+        replay_matched_emails(db, app)
+
+        db.refresh(app)
+        assert app.status == ApplicationStatus.IN_PROGRESS  # NOT advanced to APPLIED
+
+    def test_replay_still_replays_interview(self, db, test_user, email_account):
+        """INTERVIEW signal is still replayed correctly."""
+        from app.services.email_application_service import replay_matched_emails
+
+        company = _make_company(db, test_user.id)
+        app = _make_application(
+            db, test_user.id, company.id, ApplicationStatus.APPLIED,
+            source_url="https://acme.wd5.myworkdayjobs.com/en-US/careers/job/Eng_R123",
+        )
+
+        raw_email = _make_raw_email(
+            db, email_account,
+            gemini_signal="INTERVIEW", gemini_confidence=0.90,
+        )
+        raw_email.gemini_company = "Acme Corp"
+        db.flush()
+
+        replay_matched_emails(db, app)
+
+        db.refresh(app)
+        assert app.status == ApplicationStatus.INTERVIEW
+        assert raw_email.linked_application_id == app.id

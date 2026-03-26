@@ -43,7 +43,10 @@ def export_user_data(
     ).all()
 
     applications = db.scalars(
-        select(Application).where(Application.user_id == current_user.id)
+        select(Application).where(
+            Application.user_id == current_user.id,
+            Application.deleted_at.is_(None),
+        )
     ).all()
 
     app_ids = [a.id for a in applications]

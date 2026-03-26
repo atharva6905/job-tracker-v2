@@ -344,3 +344,49 @@ def test_applied_isolation_other_user(client, auth_headers, other_auth_headers):
         headers=other_auth_headers,
     )
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Soft-delete restore on re-capture
+# ---------------------------------------------------------------------------
+
+
+def test_capture_restores_soft_deleted_application(client, auth_headers, db):
+    """Re-capturing same source_url restores a soft-deleted application."""
+    # Create
+    resp1 = client.post("/extension/capture", json=VALID_PAYLOAD, headers=auth_headers)
+    assert resp1.status_code == 201
+    app_id = resp1.json()["application_id"]
+
+    # Delete (soft)
+    del_resp = client.delete(f"/applications/{app_id}", headers=auth_headers)
+    assert del_resp.status_code == 204
+
+    # Re-capture same source_url
+    resp2 = client.post("/extension/capture", json=VALID_PAYLOAD, headers=auth_headers)
+    assert resp2.status_code == 201
+    data = resp2.json()
+    assert data["application_id"] == app_id
+    assert data["message"] == "restored"
+
+    # Application is visible again
+    get_resp = client.get(f"/applications/{app_id}", headers=auth_headers)
+    assert get_resp.status_code == 200
+
+
+def test_capture_different_url_creates_new_after_delete(client, auth_headers, db):
+    """Different source_url creates a new application even if another was deleted."""
+    resp1 = client.post("/extension/capture", json=VALID_PAYLOAD, headers=auth_headers)
+    assert resp1.status_code == 201
+    original_id = resp1.json()["application_id"]
+
+    client.delete(f"/applications/{original_id}", headers=auth_headers)
+
+    different_payload = {
+        **VALID_PAYLOAD,
+        "source_url": "https://boards.greenhouse.io/other/jobs/99999",
+    }
+    resp2 = client.post("/extension/capture", json=different_payload, headers=auth_headers)
+    assert resp2.status_code == 201
+    assert resp2.json()["application_id"] != original_id
+    assert resp2.json()["message"] == "created"

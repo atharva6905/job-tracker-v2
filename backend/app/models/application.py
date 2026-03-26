@@ -26,6 +26,7 @@ class Application(Base):
         Index("ix_applications_user_id_source_url", "user_id", "source_url"),
         Index("ix_applications_user_id_ats_job_id", "user_id", "ats_job_id"),
         Index("ix_applications_user_id_workday_tenant", "user_id", "workday_tenant"),
+        Index("ix_applications_user_id_deleted_at", "user_id", "deleted_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -52,4 +53,7 @@ class Application(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=True
     )

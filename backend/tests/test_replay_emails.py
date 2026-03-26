@@ -105,10 +105,10 @@ def _make_application(
 
 
 class TestReplayMatchedEmails:
-    def test_r_number_match_advances_to_applied(
+    def test_r_number_applied_email_not_replayed(
         self, db, test_user, email_account
     ):
-        """Re-track with matching R-number in subject → advances to APPLIED."""
+        """APPLIED emails are excluded from replay — R-number match stays IN_PROGRESS."""
         company = _make_company(db, test_user.id)
         app = _make_application(
             db, test_user.id, company.id, ApplicationStatus.IN_PROGRESS,
@@ -118,16 +118,39 @@ class TestReplayMatchedEmails:
         _make_raw_email(
             db, email_account,
             subject="Your application for R2000648316 has been received",
+            gemini_signal="APPLIED",
             gemini_company="Acme Corp",
         )
 
         replay_matched_emails(db, app)
 
         db.refresh(app)
-        assert app.status == ApplicationStatus.APPLIED
+        assert app.status == ApplicationStatus.IN_PROGRESS
 
-    def test_tenant_match_advances(self, db, test_user, email_account):
-        """Re-track with matching Workday tenant → advances to APPLIED."""
+    def test_r_number_interview_email_replayed(
+        self, db, test_user, email_account
+    ):
+        """INTERVIEW emails with R-number match are still replayed."""
+        company = _make_company(db, test_user.id)
+        app = _make_application(
+            db, test_user.id, company.id, ApplicationStatus.APPLIED,
+            ats_job_id="Cashier_R2000648316",
+            source_url="https://acme.wd5.myworkdayjobs.com/job/Cashier_R2000648316",
+        )
+        _make_raw_email(
+            db, email_account,
+            subject="Interview for R2000648316",
+            gemini_signal="INTERVIEW",
+            gemini_company="Acme Corp",
+        )
+
+        replay_matched_emails(db, app)
+
+        db.refresh(app)
+        assert app.status == ApplicationStatus.INTERVIEW
+
+    def test_tenant_applied_email_not_replayed(self, db, test_user, email_account):
+        """APPLIED emails are excluded from replay — tenant match stays IN_PROGRESS."""
         company = _make_company(db, test_user.id, "Meredith")
         app = _make_application(
             db, test_user.id, company.id, ApplicationStatus.IN_PROGRESS,
@@ -136,32 +159,33 @@ class TestReplayMatchedEmails:
         _make_raw_email(
             db, email_account,
             sender="meredith@myworkday.com",
+            gemini_signal="APPLIED",
             gemini_company="People Inc.",
         )
 
         replay_matched_emails(db, app)
 
         db.refresh(app)
-        assert app.status == ApplicationStatus.APPLIED
+        assert app.status == ApplicationStatus.IN_PROGRESS
 
-    def test_company_name_match_with_normalization(
+    def test_company_name_applied_email_not_replayed(
         self, db, test_user, email_account
     ):
-        """Re-track with normalized company name match → advances to APPLIED."""
+        """APPLIED emails are excluded from replay — company match stays IN_PROGRESS."""
         company = _make_company(db, test_user.id, "Acme Corp")
         app = _make_application(
             db, test_user.id, company.id, ApplicationStatus.IN_PROGRESS,
         )
-        # gemini_company has legal suffix that normalizes to same name
         _make_raw_email(
             db, email_account,
+            gemini_signal="APPLIED",
             gemini_company="Acme Corp LLC",
         )
 
         replay_matched_emails(db, app)
 
         db.refresh(app)
-        assert app.status == ApplicationStatus.APPLIED
+        assert app.status == ApplicationStatus.IN_PROGRESS
 
     def test_already_linked_emails_not_replayed(
         self, db, test_user, email_account
@@ -223,22 +247,22 @@ class TestReplayMatchedEmails:
         db.refresh(app)
         assert app.status == ApplicationStatus.IN_PROGRESS
 
-    def test_multi_email_replay_advances_to_interview(
+    def test_multi_email_replay_skips_applied_replays_interview(
         self, db, test_user, email_account
     ):
-        """Two emails (APPLIED then INTERVIEW) → advances through to INTERVIEW."""
+        """APPLIED email is skipped, INTERVIEW email replays on APPLIED app."""
         company = _make_company(db, test_user.id)
         app = _make_application(
-            db, test_user.id, company.id, ApplicationStatus.IN_PROGRESS,
+            db, test_user.id, company.id, ApplicationStatus.APPLIED,
         )
-        # APPLIED email first (earlier timestamp)
+        # APPLIED email (filtered out of replay candidates)
         _make_raw_email(
             db, email_account,
             received_at=datetime(2025, 6, 15, 10, 0, 0, tzinfo=timezone.utc),
             gemini_signal="APPLIED",
             gemini_company="Acme Corp",
         )
-        # INTERVIEW email second (later timestamp)
+        # INTERVIEW email (replayed)
         _make_raw_email(
             db, email_account,
             received_at=datetime(2025, 6, 20, 14, 0, 0, tzinfo=timezone.utc),

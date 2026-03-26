@@ -27,6 +27,7 @@ def list_interviews(
         select(Application).where(
             Application.id == application_id,
             Application.user_id == current_user.id,
+            Application.deleted_at.is_(None),
         )
     )
     if not application:
@@ -53,6 +54,7 @@ def create_interview(
         select(Application).where(
             Application.id == application_id,
             Application.user_id == current_user.id,
+            Application.deleted_at.is_(None),
         )
     )
     if not application:

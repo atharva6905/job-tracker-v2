@@ -47,7 +47,8 @@ def _load_active_company_names(db: Session, user_id: uuid.UUID) -> set[str]:
                 ApplicationStatus.IN_PROGRESS,
                 ApplicationStatus.APPLIED,
                 ApplicationStatus.INTERVIEW,
-            ])
+            ]),
+            Application.deleted_at.is_(None),
         )
     ).scalars().all()
     return set(rows)
@@ -70,6 +71,7 @@ def _load_active_workday_tenants(db: Session, user_id: uuid.UUID) -> set[str]:
                 ApplicationStatus.INTERVIEW,
             ]),
             Application.workday_tenant.isnot(None),
+            Application.deleted_at.is_(None),
         )
     ).scalars().all()
     return set(rows)
@@ -244,6 +246,7 @@ def poll_gmail_account(
                                 ]),
                                 Application.ats_job_id.isnot(None),
                                 Application.ats_job_id.contains(r_number),
+                                Application.deleted_at.is_(None),
                             )
                         )
                         if has_ats_match:
@@ -390,6 +393,7 @@ def poll_gmail_account(
                                 ]),
                                 Application.ats_job_id.isnot(None),
                                 Application.ats_job_id.contains(retry_r_number),
+                                Application.deleted_at.is_(None),
                             )
                         ))
                 # Bypass: allow through if sender tenant matches an active tenant

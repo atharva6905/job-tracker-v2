@@ -312,6 +312,35 @@ def test_delete_application(client, auth_headers, test_application):
     )
 
 
+def test_delete_application_soft_deletes(client, auth_headers, test_application, db):
+    """DELETE sets deleted_at instead of removing the row."""
+    response = client.delete(f"/applications/{test_application.id}", headers=auth_headers)
+    assert response.status_code == 204
+
+    # GET returns 404 (filtered out)
+    assert client.get(f"/applications/{test_application.id}", headers=auth_headers).status_code == 404
+
+    # But the row still exists in the DB
+    from sqlalchemy import select
+    app = db.scalar(
+        select(Application).where(Application.id == test_application.id)
+    )
+    assert app is not None
+    assert app.deleted_at is not None
+
+
+def test_deleted_application_hidden_from_list(client, auth_headers, test_application):
+    """Soft-deleted apps don't appear in the list endpoint."""
+    # Verify it appears before delete
+    r1 = client.get("/applications", headers=auth_headers)
+    assert len(r1.json()) == 1
+
+    client.delete(f"/applications/{test_application.id}", headers=auth_headers)
+
+    r2 = client.get("/applications", headers=auth_headers)
+    assert len(r2.json()) == 0
+
+
 def test_delete_application_other_user_returns_404(
     client, other_auth_headers, test_application
 ):

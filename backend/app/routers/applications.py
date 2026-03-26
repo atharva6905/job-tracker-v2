@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -39,7 +39,10 @@ def list_applications(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    stmt = select(Application).where(Application.user_id == current_user.id)
+    stmt = select(Application).where(
+        Application.user_id == current_user.id,
+        Application.deleted_at.is_(None),
+    )
     if status is not None:
         stmt = stmt.where(Application.status == status)
     if company_id is not None:
@@ -85,6 +88,7 @@ def get_application(
         select(Application).where(
             Application.id == application_id,
             Application.user_id == current_user.id,
+            Application.deleted_at.is_(None),
         )
     )
     if not application:
@@ -105,6 +109,7 @@ def update_application(
         select(Application).where(
             Application.id == application_id,
             Application.user_id == current_user.id,
+            Application.deleted_at.is_(None),
         )
     )
     if not application:
@@ -133,6 +138,7 @@ def get_job_description(
         select(Application).where(
             Application.id == application_id,
             Application.user_id == current_user.id,
+            Application.deleted_at.is_(None),
         )
     )
     if not application:
@@ -159,6 +165,7 @@ def get_application_emails(
         select(Application).where(
             Application.id == application_id,
             Application.user_id == current_user.id,
+            Application.deleted_at.is_(None),
         )
     )
     if not application:
@@ -184,6 +191,7 @@ def structure_jd(
         select(Application).where(
             Application.id == application_id,
             Application.user_id == current_user.id,
+            Application.deleted_at.is_(None),
         )
     )
     if not application:
@@ -211,9 +219,10 @@ def delete_application(
         select(Application).where(
             Application.id == application_id,
             Application.user_id == current_user.id,
+            Application.deleted_at.is_(None),
         )
     )
     if not application:
         raise HTTPException(status_code=404)
-    db.delete(application)
+    application.deleted_at = datetime.now(timezone.utc)
     db.commit()

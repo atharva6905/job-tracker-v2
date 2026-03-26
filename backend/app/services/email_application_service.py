@@ -144,7 +144,7 @@ def replay_matched_emails(db: Session, application: Application) -> None:
         .where(
             EmailAccount.user_id == user_id,
             RawEmail.linked_application_id.is_(None),
-            RawEmail.gemini_signal.in_(ACTIONABLE_SIGNALS),
+            RawEmail.gemini_signal.in_(["INTERVIEW", "OFFER", "REJECTED"]),
             RawEmail.gemini_confidence >= 0.75,
         )
         .order_by(RawEmail.received_at.asc())
@@ -185,7 +185,6 @@ def replay_matched_emails(db: Session, application: Application) -> None:
         try:
             process_email_signal(
                 db, user_id, raw_email, classification,
-                allow_applied_on_in_progress=True,
             )
             replayed += 1
         except Exception:
@@ -251,6 +250,7 @@ def _find_matching_application(
                     Application.status == ApplicationStatus.IN_PROGRESS,
                     Application.ats_job_id.isnot(None),
                     Application.ats_job_id.contains(r_number),
+                    Application.deleted_at.is_(None),
                 )
                 .order_by(Application.created_at.desc())
             )
@@ -265,6 +265,7 @@ def _find_matching_application(
                     Application.user_id == user_id,
                     Application.status == ApplicationStatus.IN_PROGRESS,
                     Application.workday_tenant == sender_tenant,
+                    Application.deleted_at.is_(None),
                 )
                 .order_by(Application.created_at.desc())
             ).all()
@@ -281,6 +282,7 @@ def _find_matching_application(
                 Application.status == ApplicationStatus.IN_PROGRESS,
                 Company.normalized_name == normalized_company,
                 Application.source_url.isnot(None),
+                Application.deleted_at.is_(None),
             )
             .order_by(Application.created_at.desc())
         )
@@ -295,6 +297,7 @@ def _find_matching_application(
                 Application.user_id == user_id,
                 Application.status == ApplicationStatus.IN_PROGRESS,
                 Company.normalized_name == normalized_company,
+                Application.deleted_at.is_(None),
             )
             .order_by(Application.created_at.desc())
         )
@@ -319,6 +322,7 @@ def _find_matching_application(
                     [ApplicationStatus.APPLIED, ApplicationStatus.INTERVIEW]
                 ),
                 Application.workday_tenant == sender_tenant,
+                Application.deleted_at.is_(None),
             )
             .order_by(Application.created_at.desc())
         ).all()
@@ -334,6 +338,7 @@ def _find_matching_application(
                 [ApplicationStatus.APPLIED, ApplicationStatus.INTERVIEW]
             ),
             Company.normalized_name == normalized_company,
+            Application.deleted_at.is_(None),
         )
         .order_by(Application.created_at.desc())
     )
@@ -350,6 +355,7 @@ def _find_matching_application(
                 [ApplicationStatus.OFFER, ApplicationStatus.REJECTED]
             ),
             Company.normalized_name == normalized_company,
+            Application.deleted_at.is_(None),
         )
         .order_by(Application.created_at.desc())
     )
@@ -383,6 +389,7 @@ def _jaccard_fallback(
             Application.user_id == user_id,
             Application.status.in_(statuses),
             Application.created_at >= cutoff,
+            Application.deleted_at.is_(None),
         )
     ).all()
     role_tokens = set(classification_role.lower().split())
