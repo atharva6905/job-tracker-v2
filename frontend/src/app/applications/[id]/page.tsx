@@ -397,30 +397,6 @@ export default function ApplicationDetailPage() {
           )}
         </section>
 
-        {/* Correct status */}
-        <section className="border border-border/50 rounded-lg p-5">
-          <h2 className="text-xs font-medium uppercase tracking-editorial text-muted-foreground mb-3">
-            Correct Status
-          </h2>
-          <p className="mb-3 text-sm text-muted-foreground">
-            If the automated status is wrong, you can correct it here.
-          </p>
-          <Select
-            value={application.status === "IN_PROGRESS" ? "" : application.status}
-            onValueChange={handleStatusChange}
-            disabled={updating}
-          >
-            <SelectItem value="" disabled>
-              Select status...
-            </SelectItem>
-            {CORRECTABLE_STATUSES.map(({ value, label }) => (
-              <SelectItem key={value} value={value}>
-                {label}
-              </SelectItem>
-            ))}
-          </Select>
-        </section>
-
         {/* Job Description */}
         <section className="border border-border/50 rounded-lg p-5">
           <h2 className="text-xs font-medium uppercase tracking-editorial text-muted-foreground mb-4">
@@ -470,7 +446,34 @@ export default function ApplicationDetailPage() {
           )}
         </section>
 
-        <EmailTimeline applicationId={params.id} />
+        {/* Correct status */}
+        <section className="border border-border/50 rounded-lg p-5">
+          <h2 className="text-xs font-medium uppercase tracking-editorial text-muted-foreground mb-3">
+            Correct Status
+          </h2>
+          <p className="mb-3 text-sm text-muted-foreground">
+            If the automated status is wrong, you can correct it here.
+          </p>
+          <Select
+            value={application.status === "IN_PROGRESS" ? "" : application.status}
+            onValueChange={handleStatusChange}
+            disabled={updating}
+          >
+            <SelectItem value="" disabled>
+              Select status...
+            </SelectItem>
+            {CORRECTABLE_STATUSES.map(({ value, label }) => (
+              <SelectItem key={value} value={value}>
+                {label}
+              </SelectItem>
+            ))}
+          </Select>
+        </section>
+
+        {/* Email History — only shown for statuses that have email-driven transitions */}
+        {(application.status === "INTERVIEW" || application.status === "OFFER" || application.status === "REJECTED") && (
+          <EmailTimeline applicationId={params.id} />
+        )}
 
         {/* Danger zone */}
         <section className="border border-destructive/20 rounded-lg p-5">

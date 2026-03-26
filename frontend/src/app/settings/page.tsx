@@ -76,14 +76,21 @@ export default function SettingsPage() {
   const handleExport = async () => {
     setExporting(true);
     try {
-      const data = await fetchAPI<Record<string, unknown>>("/users/me/export");
-      const blob = new Blob([JSON.stringify(data, null, 2)], {
-        type: "application/json",
+      const supabase = (await import("@/lib/supabase")).createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Not authenticated");
+
+      const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+      const res = await fetch(`${apiBase}/users/me/export`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
       });
+      if (!res.ok) throw new Error(`Export failed: ${res.status}`);
+
+      const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "job-tracker-export.json";
+      a.download = "job-tracker-export.csv";
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
@@ -203,10 +210,10 @@ export default function SettingsPage() {
                 className="inline-flex items-center justify-center w-full rounded-md border border-border/50 px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
               >
                 <Download className="mr-2 h-4 w-4" />
-                {exporting ? "Exporting..." : "Export my data"}
+                {exporting ? "Exporting..." : "Download as CSV"}
               </button>
               <p className="mt-1.5 text-xs text-muted-foreground/60">
-                Download all your data as a JSON file
+                Download all your applications as a CSV file
               </p>
             </div>
 

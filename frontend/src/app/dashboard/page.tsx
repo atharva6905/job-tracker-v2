@@ -71,7 +71,9 @@ export default function DashboardPage() {
         return companyName.includes(q) || a.role.toLowerCase().includes(q);
       });
     }
-    return result;
+    return [...result].sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
   }, [applications, statusFilter, search, companies]);
 
   const formatDate = (app: Application) => {
