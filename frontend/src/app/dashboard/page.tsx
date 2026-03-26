@@ -67,7 +67,7 @@ export default function DashboardPage() {
     if (search.trim()) {
       const q = search.toLowerCase();
       result = result.filter((a) => {
-        const companyName = companies[a.company_id]?.name?.toLowerCase() ?? "";
+        const companyName = (a.display_company_name ?? companies[a.company_id]?.name ?? "").toLowerCase();
         return companyName.includes(q) || a.role.toLowerCase().includes(q);
       });
     }
@@ -224,7 +224,7 @@ export default function DashboardPage() {
               <tbody>
                 {filtered.map((app) => {
                   const companyName =
-                    companies[app.company_id]?.name ?? "Unknown";
+                    app.display_company_name ?? companies[app.company_id]?.name ?? "Unknown";
                   return (
                     <tr
                       key={app.id}

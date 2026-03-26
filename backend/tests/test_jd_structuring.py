@@ -24,6 +24,7 @@ def reset_rate_limiter():
 
 
 SAMPLE_STRUCTURED = {
+    "company_name": "Acme Corp",
     "summary": "A software engineer role at Acme.",
     "responsibilities": ["Write code", "Review PRs"],
     "required_qualifications": ["BS in CS", "2+ years Python"],
@@ -37,7 +38,8 @@ SAMPLE_STRUCTURED = {
 }
 
 GEMINI_RESPONSE_TEXT = (
-    '{"summary": "A software engineer role at Acme.", '
+    '{"company_name": "Acme Corp", '
+    '"summary": "A software engineer role at Acme.", '
     '"responsibilities": ["Write code", "Review PRs"], '
     '"required_qualifications": ["BS in CS", "2+ years Python"], '
     '"preferred_qualifications": ["Kubernetes experience"], '
@@ -58,6 +60,7 @@ GEMINI_RESPONSE_TEXT = (
 def test_parse_response_valid():
     result = _parse_response(GEMINI_RESPONSE_TEXT)
     assert result is not None
+    assert result["company_name"] == "Acme Corp"
     assert result["summary"] == "A software engineer role at Acme."
     assert result["tech_stack"] == ["Python", "FastAPI", "PostgreSQL"]
     assert result["work_model"] == "Hybrid"
@@ -76,6 +79,13 @@ def test_parse_response_no_json():
 
 def test_parse_response_missing_summary():
     assert _parse_response('{"responsibilities": ["test"]}') is None
+
+
+def test_parse_response_company_name_null():
+    text = '{"company_name": "", "summary": "A role."}'
+    result = _parse_response(text)
+    assert result is not None
+    assert result["company_name"] is None
 
 
 def test_normalize_work_model():
@@ -292,3 +302,79 @@ def test_capture_idempotent_does_not_queue_structuring(client, auth_headers, db)
         assert resp2.json()["message"] == "existing"
         # Should NOT queue structuring again
         assert mock_struct.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# Integration: display_company_name in ApplicationResponse
+# ---------------------------------------------------------------------------
+
+
+def test_list_applications_includes_display_company_name(client, auth_headers, db, test_user):
+    company = Company(user_id=test_user.id, name="myview", normalized_name="myview")
+    db.add(company)
+    db.flush()
+    app = Application(
+        user_id=test_user.id,
+        company_id=company.id,
+        role="Engineer",
+        status=ApplicationStatus.APPLIED,
+    )
+    db.add(app)
+    db.flush()
+    jd = JobDescription(
+        application_id=app.id,
+        raw_text="JD text.",
+        structured_jd={"company_name": "Shoppers Drug Mart", "summary": "A role."},
+    )
+    db.add(jd)
+    db.flush()
+
+    resp = client.get("/applications?limit=100", headers=auth_headers)
+    assert resp.status_code == 200
+    apps = resp.json()
+    match = [a for a in apps if a["id"] == str(app.id)]
+    assert len(match) == 1
+    assert match[0]["display_company_name"] == "Shoppers Drug Mart"
+
+
+def test_get_application_includes_display_company_name(client, auth_headers, db, test_user):
+    company = Company(user_id=test_user.id, name="myview", normalized_name="myview")
+    db.add(company)
+    db.flush()
+    app = Application(
+        user_id=test_user.id,
+        company_id=company.id,
+        role="Engineer",
+        status=ApplicationStatus.APPLIED,
+    )
+    db.add(app)
+    db.flush()
+    jd = JobDescription(
+        application_id=app.id,
+        raw_text="JD text.",
+        structured_jd={"company_name": "Shoppers Drug Mart", "summary": "A role."},
+    )
+    db.add(jd)
+    db.flush()
+
+    resp = client.get(f"/applications/{app.id}", headers=auth_headers)
+    assert resp.status_code == 200
+    assert resp.json()["display_company_name"] == "Shoppers Drug Mart"
+
+
+def test_display_company_name_null_when_no_jd(client, auth_headers, db, test_user):
+    company = Company(user_id=test_user.id, name="myview", normalized_name="myview")
+    db.add(company)
+    db.flush()
+    app = Application(
+        user_id=test_user.id,
+        company_id=company.id,
+        role="Engineer",
+        status=ApplicationStatus.APPLIED,
+    )
+    db.add(app)
+    db.flush()
+
+    resp = client.get(f"/applications/{app.id}", headers=auth_headers)
+    assert resp.status_code == 200
+    assert resp.json()["display_company_name"] is None

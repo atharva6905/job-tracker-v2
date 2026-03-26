@@ -52,7 +52,22 @@ def list_applications(
     if date_applied_end is not None:
         stmt = stmt.where(Application.date_applied <= date_applied_end)
     stmt = stmt.offset(skip).limit(limit)
-    return db.scalars(stmt).all()
+    apps = list(db.scalars(stmt).all())
+    if apps:
+        app_ids = [a.id for a in apps]
+        jd_rows = db.execute(
+            select(
+                JobDescription.application_id,
+                JobDescription.structured_jd,
+            ).where(JobDescription.application_id.in_(app_ids))
+        ).all()
+        cn_map: dict = {}
+        for app_id, sjd in jd_rows:
+            if sjd and isinstance(sjd, dict):
+                cn_map[app_id] = sjd.get("company_name") or None
+        for app in apps:
+            app.display_company_name = cn_map.get(app.id)
+    return apps
 
 
 @router.post("", response_model=ApplicationResponse, status_code=201)
@@ -93,6 +108,13 @@ def get_application(
     )
     if not application:
         raise HTTPException(status_code=404)
+    sjd = db.execute(
+        select(JobDescription.structured_jd).where(
+            JobDescription.application_id == application_id
+        )
+    ).scalar_one_or_none()
+    if sjd and isinstance(sjd, dict):
+        application.display_company_name = sjd.get("company_name") or None
     return application
 
 

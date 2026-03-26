@@ -172,7 +172,7 @@ export function JDSheet({
       >
         <SheetHeader className="pb-4 border-b border-border/50">
           <SheetTitle className="font-display text-2xl font-semibold">
-            {companyName}
+            {jd?.structured_jd?.company_name ?? companyName}
           </SheetTitle>
           <SheetDescription className="text-sm text-muted-foreground">
             {role}

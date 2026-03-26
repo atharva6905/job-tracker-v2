@@ -15,6 +15,7 @@ export interface Application {
   date_applied: string | null;
   notes: string | null;
   created_at: string;
+  display_company_name: string | null;
 }
 
 export interface Company {
@@ -28,6 +29,7 @@ export interface Company {
 }
 
 export interface StructuredJD {
+  company_name: string | null;
   summary: string;
   responsibilities: string[];
   required_qualifications: string[];

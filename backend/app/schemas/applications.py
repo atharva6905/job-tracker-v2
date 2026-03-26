@@ -36,6 +36,7 @@ class ApplicationResponse(BaseModel):
     date_applied: date | None
     notes: str | None
     created_at: datetime
+    display_company_name: str | None = None
 
 
 class JobDescriptionResponse(BaseModel):

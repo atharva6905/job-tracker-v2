@@ -346,7 +346,7 @@ export default function ApplicationDetailPage() {
           <div className="flex items-start justify-between mb-4">
             <div>
               <h2 className="font-display text-2xl font-semibold">
-                {company?.name ?? "Unknown Company"}
+                {jobDescription?.structured_jd?.company_name ?? company?.name ?? "Unknown Company"}
               </h2>
               <p className="mt-1 text-muted-foreground">
                 {application.role}

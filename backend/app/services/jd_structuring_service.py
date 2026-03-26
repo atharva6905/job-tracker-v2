@@ -29,6 +29,7 @@ Job description text:
 
 Respond ONLY with a JSON object, no markdown, no explanation:
 {{
+  "company_name": "<official company name or null>",
   "summary": "<1-3 sentence summary of the role>",
   "responsibilities": ["<responsibility 1>", "<responsibility 2>", ...],
   "required_qualifications": ["<qualification 1>", "<qualification 2>", ...],
@@ -46,11 +47,12 @@ Rules:
 - compensation: include salary range, hourly rate, or benefits summary if mentioned. null if not mentioned.
 - application_deadline: ISO date (YYYY-MM-DD) if mentioned. null if not mentioned.
 - work_model: exactly one of "Remote", "Hybrid", "On-site", or null if not mentioned.
+- company_name: the official company name as stated in the job description. null if not clearly identifiable.
 - If a field has no relevant info, use empty list for arrays, null for optional strings.
 """
 
 _VALID_KEYS = {
-    "summary", "responsibilities", "required_qualifications",
+    "company_name", "summary", "responsibilities", "required_qualifications",
     "preferred_qualifications", "tech_stack", "compensation",
     "application_deadline", "location", "work_model", "company_overview",
 }
@@ -72,6 +74,7 @@ def _parse_response(text: str) -> dict | None:
 
     # Normalize: ensure all expected keys present with correct types
     result = {
+        "company_name": parsed.get("company_name") or None,
         "summary": str(parsed.get("summary", "")),
         "responsibilities": _ensure_str_list(parsed.get("responsibilities")),
         "required_qualifications": _ensure_str_list(parsed.get("required_qualifications")),
