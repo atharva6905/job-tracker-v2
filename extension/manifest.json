@@ -33,7 +33,7 @@
   "externally_connectable": {
     "matches": [
       "http://localhost:3000/*",
-      "https://job-tracker-v2-kappa.vercel.app/*"
+      "https://job-tracker-ak.vercel.app/*"
     ]
   },
   "action": {
