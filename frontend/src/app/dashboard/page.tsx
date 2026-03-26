@@ -24,6 +24,7 @@ export default function DashboardPage() {
   const [applications, setApplications] = useState<Application[]>([]);
   const [companies, setCompanies] = useState<Record<string, Company>>({});
   const [dataLoading, setDataLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<ApplicationStatus | "ALL">("ALL");
   const [jdSheet, setJdSheet] = useState<{
@@ -48,8 +49,9 @@ export default function DashboardPage() {
           compMap[c.id] = c;
         }
         setCompanies(compMap);
-      } catch {
-        // error handled by fetchAPI (401 signs out)
+      } catch (err) {
+        console.error("[Dashboard] data load failed:", err);
+        setError("Failed to load applications. Check browser console for details.");
       } finally {
         setDataLoading(false);
       }
@@ -166,13 +168,19 @@ export default function DashboardPage() {
           </div>
         )}
 
+        {error && (
+          <div className="mb-6 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3">
+            <p className="text-sm text-destructive">{error}</p>
+          </div>
+        )}
+
         {dataLoading ? (
           <div className="py-16 text-center">
             <p className="font-mono text-sm text-muted-foreground">
               Loading applications...
             </p>
           </div>
-        ) : applications.length === 0 ? (
+        ) : applications.length === 0 && !error ? (
           <div className="py-24 text-center">
             <h3 className="font-display text-2xl font-semibold text-foreground/80">
               No applications yet

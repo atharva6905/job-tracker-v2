@@ -12,6 +12,7 @@ export async function fetchAPI<T = unknown>(
   } = await supabase.auth.getSession();
 
   if (!session) {
+    console.error("[fetchAPI] No session — user is signed in but getSession() returned null. Check NEXT_PUBLIC_SUPABASE_URL and cookie state.");
     throw new Error("Not authenticated");
   }
 
@@ -36,6 +37,7 @@ export async function fetchAPI<T = unknown>(
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
+    console.error(`[fetchAPI] ${res.status} from ${API_BASE}${path}:`, body);
     throw new Error(body.detail || `API error: ${res.status}`);
   }
 

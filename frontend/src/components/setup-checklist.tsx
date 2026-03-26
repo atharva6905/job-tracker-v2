@@ -25,7 +25,7 @@ export function SetupChecklist() {
 
     fetchAPI<EmailAccount[]>("/gmail/accounts")
       .then((accounts) => setGmailConnected(accounts.length > 0))
-      .catch(() => {});
+      .catch((err) => { console.error("[SetupChecklist] failed to load accounts:", err); });
 
     const extEl = document.getElementById("job-tracker-v2-ext");
     setExtensionDetected(!!extEl);

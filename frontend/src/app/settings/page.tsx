@@ -38,7 +38,7 @@ export default function SettingsPage() {
   useEffect(() => {
     fetchAPI<EmailAccount[]>("/gmail/accounts")
       .then(setAccounts)
-      .catch(() => {})
+      .catch((err) => { console.error("[Settings] failed to load Gmail accounts:", err); })
       .finally(() => setLoading(false));
   }, []);
 
@@ -46,8 +46,8 @@ export default function SettingsPage() {
     try {
       const data = await fetchAPI<{ authorization_url: string }>("/gmail/connect");
       window.location.href = data.authorization_url;
-    } catch {
-      // Error handled by fetchAPI
+    } catch (err) {
+      console.error("[Settings] gmail connect failed:", err);
     }
   };
 
@@ -56,8 +56,8 @@ export default function SettingsPage() {
     try {
       await fetchAPI(`/gmail/disconnect/${disconnectId}`, { method: "DELETE" });
       setAccounts((prev) => prev.filter((a) => a.id !== disconnectId));
-    } catch {
-      // Error handled by fetchAPI
+    } catch (err) {
+      console.error("[Settings] disconnect failed:", err);
     } finally {
       setDisconnectId(null);
     }
@@ -86,8 +86,8 @@ export default function SettingsPage() {
       a.download = "job-tracker-export.json";
       a.click();
       URL.revokeObjectURL(url);
-    } catch {
-      // Error handled by fetchAPI
+    } catch (err) {
+      console.error("[Settings] export failed:", err);
     } finally {
       setExporting(false);
     }
@@ -99,8 +99,8 @@ export default function SettingsPage() {
       await fetchAPI("/users/me", { method: "DELETE" });
       await signOut();
       router.push("/");
-    } catch {
-      // Error handled by fetchAPI
+    } catch (err) {
+      console.error("[Settings] account deletion failed:", err);
     } finally {
       setDeleting(false);
       setDeleteDialogOpen(false);
