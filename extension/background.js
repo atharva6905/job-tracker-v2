@@ -137,20 +137,20 @@ function notifyAuthExpired() {
           "bottom:20px",
           "right:20px",
           "z-index:2147483647",
-          "background:#ffffff",
-          "border:1px solid #fca5a5",
-          "border-radius:12px",
+          "background:#100E13",
+          "border:1px solid #B85C5C",
+          "border-radius:6px",
           "padding:12px 16px",
-          "box-shadow:0 8px 24px rgba(0,0,0,0.12)",
-          "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
+          "box-shadow:0 8px 24px rgba(0,0,0,0.4)",
+          "font-family:'DM Sans',system-ui,sans-serif",
           "max-width:300px"
         ].join(";");
         el.innerHTML =
           '<div style="display:flex;align-items:center;gap:8px;">' +
             '<span style="font-size:14px;">&#9888;&#65039;</span>' +
-            '<p style="margin:0;font-weight:500;font-size:13px;color:#dc2626;">Session expired</p>' +
+            '<p style="margin:0;font-weight:500;font-size:13px;color:#B85C5C;">Session expired</p>' +
           '</div>' +
-          '<p style="margin:4px 0 0;font-size:11px;color:#64748b;line-height:1.4;">' +
+          '<p style="margin:4px 0 0;font-size:11px;color:hsl(30,8%,55%);line-height:1.4;">' +
             'Re-open the Job Tracker dashboard to reconnect.' +
           '</p>';
         document.body.appendChild(el);
@@ -222,7 +222,7 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
  * @param {string} message - Text to display (e.g. "Tracking this application…")
  * @param {string} [color="#0f172a"] - CSS color for the message text
  */
-function injectTrackingOverlay(tabId, message, color = "#0f172a") {
+function injectTrackingOverlay(tabId, message, color = "#F5F0EB") {
   chrome.scripting.executeScript({
     target: { tabId },
     func: (msg, clr) => {
@@ -234,12 +234,12 @@ function injectTrackingOverlay(tabId, message, color = "#0f172a") {
         "bottom:20px",
         "right:20px",
         "z-index:2147483647",
-        "background:#ffffff",
-        "border:1px solid #e2e8f0",
-        "border-radius:12px",
+        "background:#100E13",
+        "border:1px solid #2E2B31",
+        "border-radius:6px",
         "padding:12px 16px",
-        "box-shadow:0 8px 24px rgba(0,0,0,0.12)",
-        "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
+        "box-shadow:0 8px 24px rgba(0,0,0,0.4)",
+        "font-family:'DM Sans',system-ui,sans-serif",
         "max-width:260px"
       ].join(";");
       overlay.innerHTML =
@@ -334,7 +334,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
         ats_job_id: state.jobId,
       });
       if (result.success) {
-        injectTrackingOverlay(tabId, "Applied \u2713", "#10b981");
+        injectTrackingOverlay(tabId, "Applied \u2713", "#C9A84C");
       }
       // Clear tab state regardless of outcome
       chrome.storage.session.remove(tabKey);

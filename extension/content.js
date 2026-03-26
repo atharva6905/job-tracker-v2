@@ -225,12 +225,12 @@ function maybeShowOverlay() {
     "bottom:20px",
     "right:20px",
     "z-index:2147483647",
-    "background:#ffffff",
-    "border:1px solid #e2e8f0",
-    "border-radius:12px",
+    "background:#100E13",
+    "border:1px solid #2E2B31",
+    "border-radius:6px",
     "padding:12px 16px",
-    "box-shadow:0 8px 24px rgba(0,0,0,0.12)",
-    "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
+    "box-shadow:0 8px 24px rgba(0,0,0,0.4)",
+    "font-family:'DM Sans',system-ui,sans-serif",
     "max-width:260px"
   ].join(";");
 
@@ -239,9 +239,9 @@ function maybeShowOverlay() {
   overlay.innerHTML = `
     <div style="display:flex;align-items:center;gap:8px;">
       <span style="font-size:14px;">&#9989;</span>
-      <p style="margin:0;font-weight:500;font-size:13px;color:#0f172a;">Job Tracker active</p>
+      <p style="margin:0;font-weight:500;font-size:13px;color:#F5F0EB;">Job Tracker active</p>
     </div>
-    <p style="margin:4px 0 0;font-size:11px;color:#64748b;line-height:1.4;">
+    <p style="margin:4px 0 0;font-size:11px;color:hsl(30,8%,55%);line-height:1.4;">
       Will auto-track when you apply.
     </p>
   `;
