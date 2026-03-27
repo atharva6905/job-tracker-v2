@@ -200,7 +200,7 @@ export default function DashboardPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full">
+            <table className="w-full border-separate border-spacing-0">
               <thead>
                 <tr className="border-b border-white/10">
                   <th className="pb-3 text-left text-[11px] font-medium uppercase tracking-editorial text-muted-foreground">
