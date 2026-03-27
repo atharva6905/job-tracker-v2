@@ -67,6 +67,28 @@
     background-size: 256px 256px;
   }
 
+  /* Table row hover indicator — pseudo-element accent bar */
+  tr.row-hover {
+    position: relative;
+  }
+  tr.row-hover::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: transparent;
+    transition: background 200ms;
+    pointer-events: none;
+  }
+  tr.row-hover:hover::before {
+    background: hsl(var(--accent-gold));
+  }
+  tr.row-hover:hover > td {
+    background: rgba(255, 255, 255, 0.03);
+  }
+
   /* Custom thin scrollbar */
   * {
     scrollbar-width: thin;

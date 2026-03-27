@@ -228,27 +228,27 @@ export default function DashboardPage() {
                   return (
                     <tr
                       key={app.id}
-                      className="group"
+                      className="row-hover"
                     >
-                      <td className="py-3.5 pr-4 pl-4 border-l-2 border-l-transparent group-hover:border-l-accent-gold border-b border-white/[0.06] group-hover:bg-white/[0.03] transition-colors duration-200">
+                      <td className="py-3.5 pr-4 pl-4 border-b border-white/[0.06]">
                         <span className="text-sm font-medium">
                           {companyName}
                         </span>
                       </td>
-                      <td className="py-3.5 pr-4 border-b border-white/[0.06] group-hover:bg-white/[0.03] transition-colors duration-200">
+                      <td className="py-3.5 pr-4 border-b border-white/[0.06]">
                         <span className="text-sm text-muted-foreground">
                           {app.role}
                         </span>
                       </td>
-                      <td className="py-3.5 pr-4 border-b border-white/[0.06] group-hover:bg-white/[0.03] transition-colors duration-200">
+                      <td className="py-3.5 pr-4 border-b border-white/[0.06]">
                         <StatusBadge status={app.status} />
                       </td>
-                      <td className="py-3.5 pr-4 border-b border-white/[0.06] group-hover:bg-white/[0.03] transition-colors duration-200">
+                      <td className="py-3.5 pr-4 border-b border-white/[0.06]">
                         <span className="font-mono text-xs text-muted-foreground tabular-nums">
                           {formatDate(app) ?? "\u2014"}
                         </span>
                       </td>
-                      <td className="py-3.5 text-center border-b border-white/[0.06] group-hover:bg-white/[0.03] transition-colors duration-200">
+                      <td className="py-3.5 text-center border-b border-white/[0.06]">
                         <button
                           type="button"
                           onClick={() =>
@@ -265,7 +265,7 @@ export default function DashboardPage() {
                           <FileText className="h-4 w-4" />
                         </button>
                       </td>
-                      <td className="py-3.5 text-right border-b border-white/[0.06] group-hover:bg-white/[0.03] transition-colors duration-200">
+                      <td className="py-3.5 text-right border-b border-white/[0.06]">
                         <Link
                           href={`/applications/${app.id}`}
                           className="inline-flex items-center p-1.5 text-muted-foreground/40 hover:text-accent-gold transition-colors"
