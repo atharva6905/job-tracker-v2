@@ -200,7 +200,7 @@ export default function DashboardPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="ml-[2px] w-full">
+            <table className="w-full">
               <thead>
                 <tr className="border-b border-white/10">
                   <th className="pb-3 text-left text-[11px] font-medium uppercase tracking-editorial text-muted-foreground">
@@ -228,7 +228,7 @@ export default function DashboardPage() {
                   return (
                     <tr
                       key={app.id}
-                      className="group relative border-b border-white/[0.06] transition-all hover:bg-white/[0.015] before:absolute before:inset-y-0 before:-left-[2px] before:w-[2px] before:bg-accent-gold before:opacity-0 before:transition-opacity hover:before:opacity-100"
+                      className="group border-l-2 border-transparent border-b border-white/[0.06] transition-all hover:border-l-accent-gold hover:bg-white/[0.015]"
                     >
                       <td className="py-3.5 pr-4">
                         <span className="text-sm font-medium">
