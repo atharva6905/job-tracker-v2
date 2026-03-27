@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth-provider";
 import { SetupChecklist } from "@/components/setup-checklist";
 import { StatusBadge } from "@/components/status-badge";
@@ -20,6 +21,7 @@ const STATUS_FILTERS: { value: ApplicationStatus | "ALL"; label: string }[] = [
 ];
 
 export default function DashboardPage() {
+  const router = useRouter();
   const { user, loading: authLoading, signOut } = useAuth();
   const [applications, setApplications] = useState<Application[]>([]);
   const [companies, setCompanies] = useState<Record<string, Company>>({});
@@ -228,7 +230,8 @@ export default function DashboardPage() {
                   return (
                     <tr
                       key={app.id}
-                      className="row-hover"
+                      className="row-hover cursor-pointer"
+                      onClick={() => router.push(`/applications/${app.id}`)}
                     >
                       <td className="py-3.5 pr-4 pl-4 border-b border-white/[0.06]">
                         <span className="text-sm font-medium">
@@ -251,14 +254,15 @@ export default function DashboardPage() {
                       <td className="py-3.5 text-center border-b border-white/[0.06]">
                         <button
                           type="button"
-                          onClick={() =>
+                          onClick={(e) => {
+                            e.stopPropagation();
                             setJdSheet({
                               open: true,
                               appId: app.id,
                               company: companyName,
                               role: app.role,
-                            })
-                          }
+                            });
+                          }}
                           className="inline-flex items-center justify-center p-1.5 rounded transition-colors text-muted-foreground/50 hover:text-accent-gold"
                           title="View job description"
                         >
