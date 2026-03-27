@@ -202,23 +202,23 @@ export default function DashboardPage() {
           <div className="overflow-x-auto">
             <table className="w-full border-separate border-spacing-0">
               <thead>
-                <tr className="border-b border-white/10">
-                  <th className="pb-3 text-left text-[11px] font-medium uppercase tracking-editorial text-muted-foreground">
+                <tr>
+                  <th className="pb-3 pl-4 text-left text-[11px] font-medium uppercase tracking-editorial text-muted-foreground border-b border-white/10">
                     Company
                   </th>
-                  <th className="pb-3 text-left text-[11px] font-medium uppercase tracking-editorial text-muted-foreground">
+                  <th className="pb-3 text-left text-[11px] font-medium uppercase tracking-editorial text-muted-foreground border-b border-white/10">
                     Role
                   </th>
-                  <th className="pb-3 text-left text-[11px] font-medium uppercase tracking-editorial text-muted-foreground">
+                  <th className="pb-3 text-left text-[11px] font-medium uppercase tracking-editorial text-muted-foreground border-b border-white/10">
                     Status
                   </th>
-                  <th className="pb-3 text-left text-[11px] font-medium uppercase tracking-editorial text-muted-foreground font-mono">
+                  <th className="pb-3 text-left text-[11px] font-medium uppercase tracking-editorial text-muted-foreground font-mono border-b border-white/10">
                     Date
                   </th>
-                  <th className="pb-3 text-center text-[11px] font-medium uppercase tracking-editorial text-muted-foreground">
+                  <th className="pb-3 text-center text-[11px] font-medium uppercase tracking-editorial text-muted-foreground border-b border-white/10">
                     JD
                   </th>
-                  <th className="pb-3 w-10" />
+                  <th className="pb-3 w-10 border-b border-white/10" />
                 </tr>
               </thead>
               <tbody>
@@ -228,27 +228,27 @@ export default function DashboardPage() {
                   return (
                     <tr
                       key={app.id}
-                      className="group border-l-2 border-transparent border-b border-white/[0.06] transition-all hover:border-l-accent-gold hover:bg-white/[0.015]"
+                      className="group"
                     >
-                      <td className="py-3.5 pr-4">
+                      <td className="py-3.5 pr-4 pl-4 border-l-2 border-l-transparent group-hover:border-l-accent-gold border-b border-white/[0.06] group-hover:bg-white/[0.03] transition-colors duration-200">
                         <span className="text-sm font-medium">
                           {companyName}
                         </span>
                       </td>
-                      <td className="py-3.5 pr-4">
+                      <td className="py-3.5 pr-4 border-b border-white/[0.06] group-hover:bg-white/[0.03] transition-colors duration-200">
                         <span className="text-sm text-muted-foreground">
                           {app.role}
                         </span>
                       </td>
-                      <td className="py-3.5 pr-4">
+                      <td className="py-3.5 pr-4 border-b border-white/[0.06] group-hover:bg-white/[0.03] transition-colors duration-200">
                         <StatusBadge status={app.status} />
                       </td>
-                      <td className="py-3.5 pr-4">
+                      <td className="py-3.5 pr-4 border-b border-white/[0.06] group-hover:bg-white/[0.03] transition-colors duration-200">
                         <span className="font-mono text-xs text-muted-foreground tabular-nums">
                           {formatDate(app) ?? "\u2014"}
                         </span>
                       </td>
-                      <td className="py-3.5 text-center">
+                      <td className="py-3.5 text-center border-b border-white/[0.06] group-hover:bg-white/[0.03] transition-colors duration-200">
                         <button
                           type="button"
                           onClick={() =>
@@ -265,7 +265,7 @@ export default function DashboardPage() {
                           <FileText className="h-4 w-4" />
                         </button>
                       </td>
-                      <td className="py-3.5 text-right">
+                      <td className="py-3.5 text-right border-b border-white/[0.06] group-hover:bg-white/[0.03] transition-colors duration-200">
                         <Link
                           href={`/applications/${app.id}`}
                           className="inline-flex items-center p-1.5 text-muted-foreground/40 hover:text-accent-gold transition-colors"
