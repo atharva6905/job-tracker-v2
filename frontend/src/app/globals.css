@@ -67,11 +67,14 @@
     background-size: 256px 256px;
   }
 
-  /* Table row hover indicator — pseudo-element accent bar */
-  tr.row-hover {
+  /* Table row hover indicator — accent bar on first td, bg on all tds */
+  tr.row-hover:hover > td {
+    background: rgba(255, 255, 255, 0.03);
+  }
+  tr.row-hover > td:first-child {
     position: relative;
   }
-  tr.row-hover::before {
+  tr.row-hover > td:first-child::before {
     content: "";
     position: absolute;
     left: 0;
@@ -82,11 +85,8 @@
     transition: background 200ms;
     pointer-events: none;
   }
-  tr.row-hover:hover::before {
+  tr.row-hover:hover > td:first-child::before {
     background: hsl(var(--accent-gold));
-  }
-  tr.row-hover:hover > td {
-    background: rgba(255, 255, 255, 0.03);
   }
 
   /* Custom thin scrollbar */
