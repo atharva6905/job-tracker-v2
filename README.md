@@ -144,7 +144,7 @@ See `SECURITY.md` for the token encryption key rotation procedure.
 
 ### DigitalOcean credits
 
-This project uses a DigitalOcean Droplet funded by the GitHub Student Pack ($200 credit). Check the credit expiry date in the DigitalOcean billing dashboard and plan accordingly before it runs out.
+This project uses a DigitalOcean Droplet funded by the GitHub Student Pack ($200 credit).
 
 ### Frontend
 
